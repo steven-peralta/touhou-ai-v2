@@ -1,0 +1,23 @@
+lib/target
+**/*.rs.bk
+lib/touhou/Cargo.lock
+# swap
+[._]*.s[a-w][a-z]
+[._]s[a-w][a-z]
+# session
+Session.vim
+# temporary
+.netrwhist
+*~
+# auto-generated tag files
+tags
+*.pyc$
+*.pyxbldc$
+*.c$
+*.o$
+*.so$
+*.pyd$
+lib/build/
+lib/PyTouhou.egg-info/
+.venv/
+.idea/

@@ -1,0 +1,20 @@
+[package]
+name = "touhou-runners"
+version = "0.1.0"
+authors = ["Emmanuel Gil Peyrot <linkmauve@linkmauve.fr>"]
+edition = "2018"
+description = "Runners for Touhou games"
+homepage = "https://pytouhou.linkmauve.fr"
+license = "GPL-3.0-or-later"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+touhou-formats = "*"
+touhou-interpreters = "*"
+touhou-utils = "*"
+image = { version = "0.24", default-features = false, features = ["png", "jpeg"] }
+luminance = "0.39"
+luminance-glfw = { version = "0.12", default-features = false, features = ["log-errors"] }
+luminance-derive = "0.5"
+ears = "0.8"

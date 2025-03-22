@@ -1,0 +1,41 @@
+About this project:
+-------------------
+
+This project is an attempt to rewrite the engine behind The Embodiment of Scarlet Devil (EoSD),
+a popular danmaku (bullet hell) game published for Windows by Team Shanghai Alice in 2002.
+Although the main reason behind this project is sheer curiosity, other motivations are portability and extendability.
+Additionally, this project aims for a perfect compatibility with the official game, and thus become some sort of reference implementation.
+
+
+
+Dependencies:
+-------------
+
+Running:
+    * Python3
+    * Cython (≥ 0.20)
+    * A working OpenGL driver
+    * libepoxy
+    * SDL2
+    * SDL2_image, SDL2_mixer, SDL2_ttf
+    * A TTF font file, placed as “font.ttf” in the game directory.
+
+
+Building sample data:
+    * thtk (http://code.google.com/p/thtk/)
+
+
+
+Documentation:
+--------------
+
+The code should be sufficiently documented for anyone interested to learn how the EoSD engine work,
+but additional documentation is available at:
+http://pytouhou.linkmauve.fr/
+
+
+
+Contact:
+--------
+
+You are welcome to join us at <xmpp:touhou@muc.linkmauve.fr> on jabber!

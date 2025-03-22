@@ -1,0 +1,12 @@
+[package]
+name = "touhou-utils"
+version = "0.1.0"
+authors = ["Emmanuel Gil Peyrot <linkmauve@linkmauve.fr>"]
+edition = "2018"
+description = "Utilities for Touhou games"
+homepage = "https://pytouhou.linkmauve.fr"
+license = "GPL-3.0-or-later"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]

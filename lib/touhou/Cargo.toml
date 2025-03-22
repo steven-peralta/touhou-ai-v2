@@ -1,0 +1,16 @@
+[workspace]
+
+members = [
+    "formats",
+    "interpreters",
+    "python",
+    "runners",
+    "utils",
+]
+
+[patch.crates-io]
+touhou-formats = { path = "formats" }
+touhou-interpreters = { path = "interpreters" }
+touhou-python = { path = "python" }
+touhou-runners = { path = "runners" }
+touhou-utils = { path = "utils" }
