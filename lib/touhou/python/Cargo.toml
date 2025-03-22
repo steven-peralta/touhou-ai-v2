@@ -14,7 +14,7 @@ name = "libtouhou"
 
 [dependencies]
 touhou-formats = "*"
-pyo3 = "0.17"
+pyo3 = { version = "0.17", features = ["extension-module"] }
 image = { version = "0.24", default-features = false, features = ["png"], optional = true }
 
 [features]

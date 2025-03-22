@@ -90,10 +90,10 @@ class TouhouGym(gymnasium.Env):
         }
 
         self.resource_path = abspath(game_path)
-        self.fb_downscale_factor = 8
-        self.channels = 1
+        self.fb_downscale_factor = 4
+        self.channels = 4
         self.fps_limit = 60
-        self.fb_greyscale = True
+        self.fb_greyscale = False
         self.input_shape = (y // self.fb_downscale_factor, x // self.fb_downscale_factor, self.channels)
         self.observation_space = spaces.Box(
             low=0,

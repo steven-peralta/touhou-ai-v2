@@ -37,14 +37,14 @@ if __name__ == '__main__':
 
     # training envs
     env = SubprocVecEnv([lambda: TouhouGym() for _ in range(n_envs)], start_method='spawn')
-    env = VecFrameStack(env, n_stack=2)
+    env = VecFrameStack(env, n_stack=4)
     env = VecCheckNan(env)
     env = VecMonitor(env)
     env = VecTransposeImage(env)
 
     # eval env
     eval_env = SubprocVecEnv([lambda: TouhouGym() for _ in range(n_eval_envs)], start_method='spawn')
-    eval_env = VecFrameStack(eval_env, n_stack=2)
+    eval_env = VecFrameStack(eval_env, n_stack=4)
     eval_env = VecCheckNan(eval_env)
     eval_env = VecMonitor(eval_env)
     eval_env = VecTransposeImage(eval_env)
@@ -71,7 +71,7 @@ if __name__ == '__main__':
     model = PPO(
         "CnnPolicy",
         env,
-        device="mps",
+        device="cuda",
         verbose=2,
         tensorboard_log=logs_path,
         learning_rate=learning_rate,
