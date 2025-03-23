@@ -25,3 +25,4 @@ res/**
 .idea/
 wandb/
 train/
+**/__pycache__

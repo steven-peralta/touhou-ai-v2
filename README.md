@@ -12,7 +12,7 @@ source .venv/bin/activate
 install the dependencies:
 ```bash
 sudo apt update
-sudo apt install -y libepoxy libglfw3-dev libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev libsdl2-mixer-dev
+sudo apt install -y libepoxy-dev libglfw3-dev libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev libsdl2-mixer-dev
 pip install -r requirements.txt
 ```
 

@@ -1,4 +1,5 @@
-lib/target
+lib/touhou/target
+lib/touhou/dist
 **/*.rs.bk
 lib/touhou/Cargo.lock
 # swap
@@ -11,13 +12,16 @@ Session.vim
 *~
 # auto-generated tag files
 tags
-*.pyc$
-*.pyxbldc$
-*.c$
-*.o$
-*.so$
-*.pyd$
-lib/build/
-lib/PyTouhou.egg-info/
+*.pyc
+*.pyxbldc
+*.c
+*.o
+*.so
+*.pyd
+lib/touhou/build/
+lib/touhou/PyTouhou.egg-info/
 .venv/
 .idea/
+wandb/
+train/
+**/__pycache__

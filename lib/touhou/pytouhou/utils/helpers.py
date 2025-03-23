@@ -11,9 +11,13 @@
 ## MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 ## GNU General Public License for more details.
 ##
+import logging
+from logging import getLogger
 
-#TODO: remove that someday.
-from logging import getLogger as get_logger
+def get_logger(name):
+    logger = getLogger(name)
+    logger.setLevel(logging.CRITICAL)
+    return logger
 
 
 def read_string(file, size, encoding=None):
