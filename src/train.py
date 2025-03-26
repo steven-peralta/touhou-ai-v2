@@ -6,7 +6,8 @@ from touhou_gym import TouhouGym
 import wandb
 from wandb.integration.sb3 import WandbCallback
 
-from stable_baselines3.common.vec_env import SubprocVecEnv, VecFrameStack, VecCheckNan, VecMonitor, VecTransposeImage
+from stable_baselines3.common.vec_env import SubprocVecEnv, VecFrameStack, VecCheckNan, VecMonitor, VecTransposeImage, \
+    VecVideoRecorder
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from stable_baselines3 import PPO
 
@@ -14,13 +15,17 @@ def train(
         save_base_path,
         total_steps,
         n_envs,
+        n_eval_envs,
         frame_stack_size,
         load_from_checkpoint,
         image_scale,
         greyscale,
         stage_num,
         random_stage,
-        device
+        device,
+        n_steps,
+        batch_size,
+        n_epochs,
 ):
     run_name = datetime.now().strftime("touhou-%Y-%m-%d_%H-%M-%S")
 
@@ -38,9 +43,7 @@ def train(
     save_freq = 100_000
     eval_freq = 100_000
 
-    learning_rate = 1e-4
-
-    n_eval_envs = 1
+    learning_rate = 1e-5
 
     save_freq = max(save_freq // n_envs, 1)
     eval_freq = max(eval_freq // n_envs, 1)
@@ -51,13 +54,17 @@ def train(
     env = VecCheckNan(env)
     env = VecMonitor(env)
     env = VecTransposeImage(env)
+    # env = VecVideoRecorder(env, f"videos/{run_name}", record_video_trigger=lambda x: x % 100_000 == 0,
+    #                        video_length=10000)
 
     # eval env
-    eval_env = SubprocVecEnv([lambda: TouhouGym(image_scale=image_scale, greyscale=greyscale, stage_num=stage_num, random_stage=random_stage) for _ in range(n_eval_envs)], start_method='spawn')
+    eval_env = SubprocVecEnv([lambda: TouhouGym(image_scale=image_scale, greyscale=greyscale, stage_num=stage_num, random_stage=random_stage, fps_limit=60, unlock_fps=False) for _ in range(n_eval_envs)], start_method='spawn')
     eval_env = VecFrameStack(eval_env, n_stack=frame_stack_size)
     eval_env = VecCheckNan(eval_env)
     eval_env = VecMonitor(eval_env)
     eval_env = VecTransposeImage(eval_env)
+    # eval_env = VecVideoRecorder(eval_env, f"videos/{run_name}", record_video_trigger=lambda x: x % 100_000 == 0,
+    #                        video_length=10000)
 
     # callbacks
     eval_callback = EvalCallback(
@@ -65,7 +72,7 @@ def train(
         best_model_save_path=best_path,
         log_path=logs_path,
         eval_freq=eval_freq,
-        n_eval_episodes=1,
+        n_eval_episodes=5 * n_eval_envs,
         deterministic=True
     )
     checkpoint_callback = CheckpointCallback(
@@ -75,6 +82,8 @@ def train(
         save_vecnormalize=True
     )
     wandb_callback = WandbCallback(
+        model_save_path=f"models/{run_name}",
+        gradient_save_freq=100,
         verbose=2,
     )
 
@@ -85,10 +94,13 @@ def train(
         model = PPO(
             "MultiInputPolicy",
             env,
+            n_steps=n_steps,
+            batch_size=batch_size,
             device=device,
             verbose=2,
             tensorboard_log=logs_path,
-            learning_rate=learning_rate,
+            n_epochs=n_epochs,
+            learning_rate=learning_rate
         )
 
     try:

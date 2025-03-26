@@ -5,6 +5,7 @@ cdef class Clock:
     cdef unsigned long _ref_tick
     cdef long _target_fps, _ref_frame, _fps_tick, _fps_frame
     cdef double fps
+    cdef bint no_delay
 
     cdef void set_target_fps(self, long fps) nogil
     cdef bint tick(self) nogil except True
@@ -22,6 +23,7 @@ cdef class Window:
     cdef gui.Window win
     cdef Runner runner
     cdef Clock clock
+    cdef bint no_delay
     cdef int frame, frameskip
     cdef int width, height
 

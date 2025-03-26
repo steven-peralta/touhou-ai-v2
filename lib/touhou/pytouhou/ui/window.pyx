@@ -18,13 +18,14 @@ cimport pytouhou.lib.sdl as sdl
 
 
 cdef class Clock:
-    def __init__(self, long fps=-1):
+    def __init__(self, long fps=-1, bint no_delay=False):
         self._target_fps = 0
         self._ref_tick = 0
         self._ref_frame = 0
         self._fps_tick = 0
         self._fps_frame = 0
         self.fps = 0
+        self.no_delay = no_delay
         self.set_target_fps(fps)
 
 
@@ -58,7 +59,7 @@ cdef class Clock:
         if self._target_fps > 0:
             target_tick += <unsigned long>(self._ref_frame * 1000 / self._target_fps)
 
-        if current <= target_tick:
+        if current <= target_tick and not self.no_delay:
             sdl.delay(target_tick - current)
         else:
             self._ref_tick = current
@@ -79,15 +80,14 @@ cdef class Runner:
 
 
 cdef class Window:
-    def __init__(self, backend, int width=640, int height=480, long fps_limit=-1, frameskip=1):
+    def __init__(self, backend, int width=640, int height=480, long fps_limit=-1, frameskip=1, bint no_delay=False):
         if backend is not None:
             self.win = backend.create_window(
                 'PyTouhou',
                 sdl.WINDOWPOS_CENTERED, sdl.WINDOWPOS_CENTERED,
                 width, height,
                 frameskip)
-
-        self.clock = Clock(fps_limit)
+        self.clock = Clock(fps_limit, no_delay=no_delay)
         self.frame = 0
         self.frameskip = frameskip
         self.width = width
