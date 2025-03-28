@@ -83,18 +83,25 @@ def closest_point(points, point):
 
     # Normalize coordinates and distance
     if closest:
-        d_max = np.sqrt(x ** 2 + y ** 2)  # Max possible distance
-        return closest[0] / x, closest[1] / y, closest[2] / d_max, closest[3], closest[4], closest[5], closest[6]  # Normalize
+        return closest[0], closest[1], closest[2], closest[3], closest[4], closest[5], closest[6]  # Normalize
 
     return -1, -1, -1, -1, -1, -1, -1  # Fallback in case of error
 
-def normalize(coords):
-    if len(coords) == 0:
-        return np.array([-1, -1])  # Default value for missing objects
-    return np.array([coords[0] / x, coords[1] / y])
+def item_intersects_hitbox(player_x, player_y, hitbox, item_x, item_y, max_distance=448):
+    x1, x2 = player_x - hitbox, player_x + hitbox
+
+    # Check if item's x is within the player's horizontal hitbox
+    if not (x1 <= item_x <= x2) or (player_y < item_y):
+        return False, -1
+
+    distance = np.sqrt((item_x - player_x) ** 2 + (item_y - player_y) ** 2)
+    if distance > max_distance:
+        return False, -1
+
+    return True, distance
 
 
-def bullet_intersects_hitbox(player_x, player_y, hitbox, bullet_x, bullet_y, dx, dy, max_distance=50):
+def bullet_intersects_hitbox(player_x, player_y, hitbox, bullet_x, bullet_y, dx, dy, max_distance=590):
     x1, x2 = player_x - hitbox, player_x + hitbox
     y1, y2 = player_y - hitbox, player_y + hitbox
 
@@ -123,13 +130,6 @@ def bullet_intersects_hitbox(player_x, player_y, hitbox, bullet_x, bullet_y, dx,
         return False, -1
 
     return True, np.sqrt((bullet_x - player_x) ** 2 + (bullet_y - player_y) ** 2)
-
-
-def normalize_radians(angle):
-    angle = (angle + np.pi) % (2 * np.pi) - np.pi
-    normalized_angle = angle / np.pi
-
-    return normalized_angle
 
 
 class CustomWindow(Window):
@@ -167,18 +167,18 @@ class TouhouGym(gymnasium.Env):
         self.render_mode = 'rgb_array'
         self.resource_path = abspath(game_path)
         self.fb_downscale_factor = image_scale
-        self.channels = 1 if greyscale else 4
+        self.channels = 1 if greyscale else 3
         self.fps_limit = fps_limit
         self.unlock_fps = unlock_fps
         self.fb_greyscale = greyscale
         self.input_shape = (y // self.fb_downscale_factor, x // self.fb_downscale_factor, self.channels)
         self.observation_space = spaces.Dict({
-            'features': spaces.Box(low=-np.inf, high=np.inf,shape=(27,)),
+            'features': spaces.Box(low=-np.inf, high=np.inf,shape=(19,)),
             'image': spaces.Box(
                 low=0,
-                high=1,
+                high=255,
                 shape=self.input_shape,
-                dtype=np.float32
+                dtype=np.uint8
             )
         })
         self.action_space = spaces.Discrete(len(actions))
@@ -219,7 +219,7 @@ class TouhouGym(gymnasium.Env):
         if self.fb_greyscale:
             pil_img = Image.fromarray(scaled.squeeze(), mode='L')
         else:
-            pil_img = Image.fromarray(scaled, mode='RGBA')
+            pil_img = Image.fromarray(scaled, mode='RGB')
 
         # Save the image
         pil_img.save(f"/Users/steven/Development/touhou-ai-v2/image/agent_view_{self.game.frame}.png")
@@ -278,30 +278,29 @@ class TouhouGym(gymnasium.Env):
 
     def _get_obs(self):
         framebuffer = self.renderer.get_framebuffer(Interface.width, Interface.height, greyscale=self.fb_greyscale)
-        img = np.frombuffer(framebuffer, dtype=np.uint8).reshape((Interface.height, Interface.width, self.channels))
+        img = np.frombuffer(framebuffer, dtype=np.uint8).reshape((Interface.height, Interface.width, 4))
         cropped = np.ascontiguousarray(img[offset_y:offset_y + y, offset_x:offset_x + x])
-        scaled = np.flipud(tinyscaler.scale(cropped, (x // self.fb_downscale_factor, y // self.fb_downscale_factor))).astype(np.float32) / 255
+        scaled = np.flipud(tinyscaler.scale(cropped, (x // self.fb_downscale_factor, y // self.fb_downscale_factor), mode='bilinear'))
+        scaled = scaled[:, :, :3]
 
         # Convert entities to NumPy arrays
-        bullet_coords = np.array([(b.x, b.y, b.dx, b.dy, b.speed / 1000, normalize_radians(b.angle)) for b in
+        bullet_coords = np.array([(b.x, b.y, b.dx, b.dy, b.speed, b.angle) for b in
                                   self.game.bullets]) if self.game.bullets else np.empty((0, 6))
         enemy_coords = np.array(
-            [(enm.x, enm.y, enm.angle, enm.speed / 1000, enm.rotation_speed / 1000, enm.acceleration / 1000) for enm in
+            [(enm.x, enm.y, enm.angle, enm.speed, enm.rotation_speed, enm.acceleration) for enm in
              self.game.enemies]) if self.game.enemies else np.empty((0, 6))
         item_coords = np.array([(i.x, i.y, -1, -1, -1, -1) for i in self.game.items]) if self.game.items else np.empty((0, 6))
-        player_coords = normalize(np.array([self.game.players[0].x, self.game.players[0].y]))
+        player_coords = np.array([self.game.players[0].x, self.game.players[0].y])
 
         # Compute closest entities
         closest_bullet = closest_point(bullet_coords, player_coords)
         closest_enemy = closest_point(enemy_coords, player_coords)
-        closest_item = closest_point(item_coords, player_coords)
+        closest_item = closest_point(item_coords, player_coords)[:2]
 
-        current_score = self.game.players[0].score
-        grazes = self.game.players[0].graze
         is_dead = 1 if self.starting_lives > self.game.players[0].lives else 0
 
         # Stack all features into a single array (fixed size)
-        features = np.hstack([player_coords, closest_bullet, closest_enemy, closest_item, current_score, grazes, self.game.frame, is_dead])
+        features = np.hstack([player_coords, closest_bullet, closest_enemy, closest_item, is_dead])
         return {'image': scaled, 'features': features}
 
     def reset(self, seed=None, options=None):
@@ -326,17 +325,17 @@ class TouhouGym(gymnasium.Env):
             terminated = True
         except GameOver:
             terminated = True
-
+        observation = self._get_obs()
         is_dead = self.starting_lives > self.game.players[0].lives
         self.game.players[0].lives = 0
 
         # reward for keeping towards (192, 384)
-        target_x = 192 / x
-        target_y = 384 / y
+        target_x = 192
+        target_y = 384
         target_pos = np.array([target_x, target_y])
-        player_pos = np.array([self.game.players[0].x / x, self.game.players[0].y / y])
+        player_pos = np.array([self.game.players[0].x, self.game.players[0].y])
         distance_to_target = np.linalg.norm(player_pos - target_pos)
-        proximity_reward = -0.001 * distance_to_target  # Tune this scale
+        proximity_reward = -0.01 * distance_to_target  # Tune this scale
 
         reward = self.game.players[0].rewards - self.rewards
         self.rewards = self.game.players[0].rewards
@@ -345,16 +344,26 @@ class TouhouGym(gymnasium.Env):
 
         if is_dead:
             reward -= 10
+            terminated = True
+            return observation, reward, terminated, False, {}
         else:
-            reward += 0.1
+            reward += 0.01 # reward for staying alive
 
-        for bullet in self.game.bullets:
-            intersect, distance = bullet_intersects_hitbox(self.game.players[0].x, self.game.players[0].y, self.game.players[0].sht.hitbox, bullet.x, bullet.y, bullet.dx, bullet.dy)
-            if intersect:
-                reward -= max(0.1, 1.0 - (distance / 50))
+            # subtract for being in vector of bullet max at 50 pixels
+            for bullet in self.game.bullets:
+                intersect, distance = bullet_intersects_hitbox(self.game.players[0].x, self.game.players[0].y, self.game.players[0].sht.hitbox, bullet.x, bullet.y, bullet.dx, bullet.dy)
+                if intersect:
+                    reward -= max(0.01, 1.0 - (distance / 50)) * 1.25
 
-        observation = self._get_obs()
-        return observation, reward, terminated, False, {}
+            # add for being in the x coordinate of an item
+            for item in self.game.items:
+                intersect, distance = item_intersects_hitbox(self.game.players[0].x, self.game.players[0].y, self.game.players[0].sht.item_hitbox, item.x, item.y)
+                if intersect:
+                    reward += max(0.01, 1.0 - (distance / 590))
+
+            return observation, reward, terminated, False, {}
+
+
 
     def close(self):
         self.window.set_runner(None)

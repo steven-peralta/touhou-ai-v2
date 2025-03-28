@@ -67,6 +67,33 @@ def bullet_intersects_hitbox(player_x, player_y, hitbox, bullet_x, bullet_y, dx,
 
     return True, np.sqrt((bullet_x - player_x) ** 2 + (bullet_y - player_y) ** 2)
 
+def item_intersects_hitbox(player_x, player_y, hitbox, item_x, item_y, max_distance=590):
+    """
+    Check if a falling item intersects the player's hitbox within a vertical range.
+
+    Parameters:
+    - player_x, player_y: center of player's hitbox
+    - hitbox: half-width/height of square hitbox (i.e., radius)
+    - item_x, item_y: current item position
+    - max_distance: max vertical distance to consider (optional)
+
+    Returns:
+    - (bool, float): (True if intersects, distance to item)
+    """
+
+    # Hitbox bounds
+    x1, x2 = player_x - hitbox, player_x + hitbox
+
+    # Check if item's x is within the player's horizontal hitbox
+    if not (x1 <= item_x <= x2) or (player_y < item_y):
+        return False, -1
+
+    distance = np.sqrt((item_x - player_x) ** 2 + (item_y - player_y) ** 2)
+    if distance > max_distance:
+        return False, -1
+
+    return True, distance
+
 def start():
     characters = [0]
     continues = 0
@@ -111,9 +138,17 @@ def start():
 
 
     def run_frame():
-        global current_score
-        global total_rewards
         while window.run_frame():
+            # for bullet in game.bullets:
+            #     intersect, distance = bullet_intersects_hitbox(game.players[0].x, game.players[0].y, game.players[0].sht.hitbox, bullet.x, bullet.y, bullet.dx, bullet.dy)
+            #     if intersect:
+            #         neg_reward = max(0.01, 1.0 - (distance / 50))
+            #         print(neg_reward)
+                    #reward -= neg_reward
+            for item in game.items:
+               intersect, distance = item_intersects_hitbox(game.players[0].x, game.players[0].y, game.players[0].sht.item_hitbox, item.x, item.y)
+               if intersect:
+                   print()
             #bullet_coords = np.array([(b.x, b.y, b.dx, b.dy, b.speed / 1000, normalize_radians(b.angle)) for b in game.bullets]) if game.bullets else np.empty((0, 6))
             #enemy_coords = np.array([(enm.x, enm.y, enm.angle, enm.speed / 1000, enm.rotation_speed / 1000, enm.acceleration / 1000) for enm in game.enemies]) if game.enemies else np.empty((0, 6))
             #item_coords = np.array([(i.x, i.y, -1, -1, -1, -1) for i in game.items]) if game.items else np.empty((0, 6))
@@ -152,13 +187,13 @@ def start():
             # reward = -1 if is_dead else (game.players[0].rewards - rewards) + proximity_reward
             # rewards = game.players[0].rewards
             #print(reward)
-            player = game.players[0]
-            px, py = player.x, player.y
-            phalf_size = player.sht.hitbox
-            for bullet in game.bullets:
-                intersect, distance = bullet_intersects_hitbox(px, py, phalf_size, bullet.x, bullet.y, bullet.dx, bullet.dy)
-                if intersect:
-                    print(max(0.1, 1.0 - (distance / 50)))
+            # player = game.players[0]
+            # px, py = player.x, player.y
+            # phalf_size = player.sht.hitbox
+            # for bullet in game.bullets:
+            #     intersect, distance = bullet_intersects_hitbox(px, py, phalf_size, bullet.x, bullet.y, bullet.dx, bullet.dy)
+            #     if intersect:
+            #         print(max(0.1, 1.0 - (distance / 50)))
             pass
 
     while True:
@@ -167,7 +202,9 @@ def start():
             break
         except NextStage:
             stage_num += 1
+            print("NEXT STAGE")
         except GameOver:
+            print("GAME OVER")
             break
     window.set_runner(None)
 

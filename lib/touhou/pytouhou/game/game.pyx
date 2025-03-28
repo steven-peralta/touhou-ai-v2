@@ -233,6 +233,7 @@ cdef class Game:
 
 
     cpdef new_msg(self, sub):
+        #pass
         self.msg_runner = MSGRunner(self.msg, sub, self)
         self.msg_runner.run_iteration()
 
@@ -293,10 +294,10 @@ cdef class Game:
 
         # Pri 6 is background
         self.update_background() #TODO: Pri unknown
-        if self.msg_runner is not None:
-            self.update_msg(keystates[0]) # Pri ?
-            for i in range(len(keystates)):
-                keystates[i] &= ~3 # Remove the ability to attack (keystates 1 and 2).
+        # if self.msg_runner is not None:
+        #     self.update_msg(keystates[0]) # Pri ?
+        #     for i in range(len(keystates)):
+        #         keystates[i] &= ~3 # Remove the ability to attack (keystates 1 and 2).
         self.update_players(keystates) # Pri 7
         self.update_enemies() # Pri 9
         self.update_effects() # Pri 10
@@ -311,7 +312,7 @@ cdef class Game:
         for text in self.texts.values(): #TODO: what priority is it?
             if text is not None:
                 text.update()
-        self.update_faces() # Pri XXX
+        # self.update_faces() # Pri XXX
 
         # 5. Clean up
         self.cleanup()

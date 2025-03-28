@@ -93,12 +93,14 @@ class ECLMainRunner(metaclass=MetaRegistry):
 
     @instruction(8)
     def call_msg(self, sub, instr_type):
-        self._game.new_msg(sub)
+        pass
+        #self._game.new_msg(sub)
 
 
     @instruction(9)
     def wait_msg(self, sub, instr_type):
-        self._game.msg_wait = True
+        pass
+        #self._game.msg_wait = True
 
 
     @instruction(10)

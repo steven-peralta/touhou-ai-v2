@@ -81,11 +81,11 @@ cdef class Player(Element):
     cdef bint collide(self) except True:
         if not self.invulnerable_time and not self.death_time and self.touchable: # Border Between Life and Death
             self.death_time = self._game.frame
-            self._game.new_effect((self.x, self.y), 17)
-            self._game.modify_difficulty(-1600)
-            self.play_sound('pldead00')
-            for i in range(16):
-                self._game.new_particle((self.x, self.y), 11, 256) #TODO: find the real size and range.
+            # self._game.new_effect((self.x, self.y), 17)
+            # self._game.modify_difficulty(-1600)
+            # self.play_sound('pldead00')
+            # for i in range(16):
+            #     self._game.new_particle((self.x, self.y), 11, 256) #TODO: find the real size and range.
 
 
     def start_focusing(self):
@@ -235,7 +235,7 @@ cdef class Player(Element):
 
         if self.death_time:
             time = self._game.frame - self.death_time
-            if time == 6: # too late, you are dead :(
+            if time == 1: # too late, you are dead :(
                 self.touchable = False
                 if self.power > 16:
                     self.power -= 16

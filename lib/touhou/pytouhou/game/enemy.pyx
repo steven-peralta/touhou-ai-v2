@@ -391,7 +391,10 @@ cdef class Enemy(Element):
         ey1, ey2 = ey - ehalf_size_y * 2. / 3., ey + ehalf_size_y * 2. / 3.
         if self.collidable:
             for player in self._game.players:
-
+                px, py = player.x, player.y
+                phalf_size = player.sht.hitbox
+                px1, px2 = px - phalf_size, px + phalf_size
+                py1, py2 = py - phalf_size, py + phalf_size
 
                 #TODO: box-box or point-in-box?
                 if not (ex2 < px1 or ex1 > px2 or ey2 < py1 or ey1 > py2):

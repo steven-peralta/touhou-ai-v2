@@ -1,13 +1,11 @@
 import os
 from datetime import datetime
-import multiprocessing
 from touhou_gym import TouhouGym
 
 import wandb
 from wandb.integration.sb3 import WandbCallback
 
-from stable_baselines3.common.vec_env import SubprocVecEnv, VecFrameStack, VecCheckNan, VecMonitor, VecTransposeImage, \
-    VecVideoRecorder
+from stable_baselines3.common.vec_env import SubprocVecEnv, VecMonitor, VecTransposeImage, VecFrameStack, VecNormalize
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from stable_baselines3 import PPO
 
@@ -16,11 +14,11 @@ def train(
         total_steps,
         n_envs,
         n_eval_envs,
-        frame_stack_size,
         load_from_checkpoint,
         image_scale,
         greyscale,
         stage_num,
+        frame_stack_size,
         random_stage,
         device,
         n_steps,
@@ -43,7 +41,7 @@ def train(
     save_freq = 100_000
     eval_freq = 100_000
 
-    learning_rate = 1e-5
+    learning_rate = 1e-4
 
     save_freq = max(save_freq // n_envs, 1)
     eval_freq = max(eval_freq // n_envs, 1)
@@ -51,20 +49,16 @@ def train(
     # training envs
     env = SubprocVecEnv([lambda: TouhouGym(image_scale=image_scale, greyscale=greyscale, stage_num=stage_num, random_stage=random_stage) for _ in range(n_envs)], start_method='spawn')
     env = VecFrameStack(env, n_stack=frame_stack_size)
-    env = VecCheckNan(env)
+    env = VecNormalize(env, norm_obs_keys=['features'])
     env = VecMonitor(env)
     env = VecTransposeImage(env)
-    # env = VecVideoRecorder(env, f"videos/{run_name}", record_video_trigger=lambda x: x % 100_000 == 0,
-    #                        video_length=10000)
 
     # eval env
     eval_env = SubprocVecEnv([lambda: TouhouGym(image_scale=image_scale, greyscale=greyscale, stage_num=stage_num, random_stage=random_stage, fps_limit=60, unlock_fps=False) for _ in range(n_eval_envs)], start_method='spawn')
     eval_env = VecFrameStack(eval_env, n_stack=frame_stack_size)
-    eval_env = VecCheckNan(eval_env)
+    eval_env = VecNormalize(eval_env, training=False, norm_obs_keys=['features'])
     eval_env = VecMonitor(eval_env)
     eval_env = VecTransposeImage(eval_env)
-    # eval_env = VecVideoRecorder(eval_env, f"videos/{run_name}", record_video_trigger=lambda x: x % 100_000 == 0,
-    #                        video_length=10000)
 
     # callbacks
     eval_callback = EvalCallback(
@@ -72,7 +66,7 @@ def train(
         best_model_save_path=best_path,
         log_path=logs_path,
         eval_freq=eval_freq,
-        n_eval_episodes=5 * n_eval_envs,
+        n_eval_episodes=n_eval_envs,
         deterministic=True
     )
     checkpoint_callback = CheckpointCallback(
@@ -100,7 +94,8 @@ def train(
             verbose=2,
             tensorboard_log=logs_path,
             n_epochs=n_epochs,
-            learning_rate=learning_rate
+            learning_rate=learning_rate,
+            gamma=0.999
         )
 
     try:
