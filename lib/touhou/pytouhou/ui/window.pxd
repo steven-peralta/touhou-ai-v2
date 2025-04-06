@@ -26,6 +26,7 @@ cdef class Window:
     cdef bint no_delay
     cdef int frame, frameskip
     cdef int width, height
+    cdef bint disable_render
 
     cdef void set_size(self, int width, int height) nogil
     cpdef set_runner(self, Runner runner=*)

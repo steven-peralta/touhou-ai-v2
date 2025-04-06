@@ -3,6 +3,8 @@ import multiprocessing
 import os
 import subprocess
 from pyvirtualdisplay import Display
+
+from eval import eval_model
 from train import train
 
 parser = argparse.ArgumentParser(description='Touhou AI')
@@ -23,6 +25,7 @@ parser.add_argument('--headless', action='store_true', help='Headless')
 parser.add_argument('--n-steps', default=os.getenv('N_STEPS', '2048'), type=int, help='N steps')
 parser.add_argument('--batch-size', default=os.getenv('BATCH_SIZE', '64'), type=int, help='Batch size')
 parser.add_argument('--n-epochs', default=os.getenv('N_EPOCHS', '8'), type=int, help='N epochs')
+parser.add_argument('--n-eval-episodes', default=os.getenv('N_EVAL_EPISODES', '5'), type=int, help='N eval episodes')
 
 stream_key = os.getenv('STREAM_KEY')
 
@@ -68,10 +71,7 @@ def main():
     n_steps = args.n_steps
     batch_size = args.batch_size
     n_epochs = args.n_epochs
-
-    if not is_train:
-        print("implement later") # TODO add eval
-        exit(1)
+    n_eval_episodes = args.n_eval_episodes
 
     if headless:
         display = Display()
@@ -85,22 +85,35 @@ def main():
         process = multiprocessing.Process(target=start_ffmpeg)
         process.start()
 
-    train(
-        save_base_path=output_dir,
-        total_steps=total_steps,
-        n_envs=n_envs,
-        n_eval_envs=n_eval_envs,
-        frame_stack_size=frame_stack,
-        image_scale=frame_scale,
-        greyscale=not frame_color,
-        stage_num=stage,
-        random_stage=random_stage,
-        device=device,
-        load_from_checkpoint=load_model,
-        n_steps=n_steps,
-        batch_size=batch_size,
-        n_epochs=n_epochs
-    )
+    if is_train:
+        train(
+            save_base_path=output_dir,
+            total_steps=total_steps,
+            n_envs=n_envs,
+            n_eval_envs=n_eval_envs,
+            frame_stack_size=frame_stack,
+            image_scale=frame_scale,
+            greyscale=not frame_color,
+            stage_num=stage,
+            random_stage=random_stage,
+            device=device,
+            load_from_checkpoint=load_model,
+            n_steps=n_steps,
+            batch_size=batch_size,
+            n_epochs=n_epochs
+        )
+    else:
+        eval_model(
+            n_eval_envs=n_eval_envs,
+            frame_stack_size=frame_stack,
+            image_scale=frame_scale,
+            greyscale=not frame_color,
+            stage_num=stage,
+            random_stage=random_stage,
+            device=device,
+            load_from_checkpoint=load_model,
+            n_eval_episodes=n_eval_episodes
+        )
 
 if __name__ == '__main__':
     main()

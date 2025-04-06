@@ -1,5 +1,7 @@
 import os
 from datetime import datetime
+
+from PIFE import PIFEFeatureExtractor, CombinedPIFEFeatureExtractor
 from touhou_gym import TouhouGym
 
 import wandb
@@ -8,6 +10,12 @@ from wandb.integration.sb3 import WandbCallback
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecMonitor, VecTransposeImage, VecFrameStack, VecNormalize
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from stable_baselines3 import PPO
+
+
+def linear_schedule(initial_value):
+    def func(progress_remaining):
+        return progress_remaining * initial_value
+    return func
 
 def train(
         save_base_path,
@@ -41,24 +49,21 @@ def train(
     save_freq = 100_000
     eval_freq = 100_000
 
-    learning_rate = 1e-4
+    learning_rate = linear_schedule(3e-4)
+    clip_range = linear_schedule(0.2)
 
     save_freq = max(save_freq // n_envs, 1)
     eval_freq = max(eval_freq // n_envs, 1)
 
     # training envs
-    env = SubprocVecEnv([lambda: TouhouGym(image_scale=image_scale, greyscale=greyscale, stage_num=stage_num, random_stage=random_stage) for _ in range(n_envs)], start_method='spawn')
+    env = SubprocVecEnv([lambda: TouhouGym(disable_render=True, stage_num=stage_num, random_stage=random_stage) for _ in range(n_envs)], start_method='spawn')
     env = VecFrameStack(env, n_stack=frame_stack_size)
-    env = VecNormalize(env, norm_obs_keys=['features'])
     env = VecMonitor(env)
-    env = VecTransposeImage(env)
 
     # eval env
-    eval_env = SubprocVecEnv([lambda: TouhouGym(image_scale=image_scale, greyscale=greyscale, stage_num=stage_num, random_stage=random_stage, fps_limit=60, unlock_fps=False) for _ in range(n_eval_envs)], start_method='spawn')
+    eval_env = SubprocVecEnv([lambda: TouhouGym(disable_render=False, stage_num=stage_num, random_stage=random_stage, fps_limit=60, unlock_fps=False) for _ in range(n_eval_envs)], start_method='spawn')
     eval_env = VecFrameStack(eval_env, n_stack=frame_stack_size)
-    eval_env = VecNormalize(eval_env, training=False, norm_obs_keys=['features'])
     eval_env = VecMonitor(eval_env)
-    eval_env = VecTransposeImage(eval_env)
 
     # callbacks
     eval_callback = EvalCallback(
@@ -81,6 +86,10 @@ def train(
         verbose=2,
     )
 
+    policy_kwargs = dict(
+        features_extractor_class=CombinedPIFEFeatureExtractor,
+    )
+
     if load_from_checkpoint:
         model = PPO.load(load_from_checkpoint, env, device=device,
                          tensorboard_log=logs_path)
@@ -95,7 +104,8 @@ def train(
             tensorboard_log=logs_path,
             n_epochs=n_epochs,
             learning_rate=learning_rate,
-            gamma=0.999
+            clip_range=clip_range,
+            policy_kwargs=policy_kwargs,
         )
 
     try:
@@ -109,87 +119,3 @@ def train(
     except Exception as e:
         print(e)
         run.alert(title="Run crashed", text=f"Run crashed with this error: {e}")
-
-# if __name__ == '__main__':
-#     run_name = datetime.now().strftime("touhou-%Y-%m-%d_%H-%M-%S")
-#
-#     run = wandb.init(
-#         entity="k9rosie",
-#         project='touhou-ai-v2',
-#         sync_tensorboard=True,
-#         name=run_name
-#     )
-#
-#     save_path = f'train/checkpoints/{run_name}'
-#     best_path = f'train/best/{run_name}'
-#     logs_path = f'train/logs'
-#
-#     total_timesteps = 100_000_000
-#     save_freq = 100_000
-#     eval_freq = 100_000
-#
-#     learning_rate = 1e-4
-#
-#     n_envs = multiprocessing.cpu_count()
-#     n_eval_envs = 1
-#
-#     save_freq = max(save_freq // n_envs, 1)
-#     eval_freq = max(eval_freq // n_envs, 1)
-#
-#     # training envs
-#     env = SubprocVecEnv([lambda: TouhouGym() for _ in range(n_envs)], start_method='spawn')
-#     env = VecFrameStack(env, n_stack=2)
-#     env = VecCheckNan(env)
-#     env = VecMonitor(env)
-#     env = VecTransposeImage(env)
-#
-#     # eval env
-#     eval_env = SubprocVecEnv([lambda: TouhouGym() for _ in range(n_eval_envs)], start_method='spawn')
-#     eval_env = VecFrameStack(eval_env, n_stack=2)
-#     eval_env = VecCheckNan(eval_env)
-#     eval_env = VecMonitor(eval_env)
-#     eval_env = VecTransposeImage(eval_env)
-#
-#     # callbacks
-#     eval_callback = EvalCallback(
-#         eval_env,
-#         best_model_save_path=best_path,
-#         log_path=logs_path,
-#         eval_freq=eval_freq,
-#         n_eval_episodes=1,
-#         deterministic=True
-#     )
-#     checkpoint_callback = CheckpointCallback(
-#         save_freq=max(save_freq, 1),
-#         save_path=save_path,
-#         name_prefix='touhou-ai',
-#         save_vecnormalize=True
-#     )
-#     wandb_callback = WandbCallback(
-#         verbose=2,
-#     )
-#
-#     # model = PPO(
-#     #     "MultiInputPolicy",
-#     #     env,
-#     #     device="cuda",
-#     #     verbose=2,
-#     #     tensorboard_log=logs_path,
-#     #     learning_rate=learning_rate,
-#     # )
-#
-#     model = PPO.load("train/checkpoints/touhou-2025-03-23_03-48-39/touhou-ai_3600000_steps", env, device="cuda", tensorboard_log=logs_path)
-#
-#     #model = PPO.load(f"train/checkpoints/new_run/touhou-ai_1900000_steps", env, device="cuda", tensorboard_log=logs_path)
-#
-#     try:
-#         model.learn(
-#             total_timesteps=total_timesteps,
-#             reset_num_timesteps=False,
-#             progress_bar=True,
-#             callback=[checkpoint_callback, eval_callback, wandb_callback],
-#             tb_log_name=run_name
-#         )
-#     except Exception as e:
-#         print(e)
-#         run.alert(title="Run crashed", text=f"Run crashed with this error: {e}")

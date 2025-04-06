@@ -3,20 +3,28 @@ from stable_baselines3 import PPO
 from touhou_gym import TouhouGym
 from stable_baselines3.common.evaluation import evaluate_policy
 
-saved_model = '/Users/steven/Development/Pycharm/train/best/run3/best_model'
-
-if __name__ == '__main__':
-    env = SubprocVecEnv([lambda: TouhouGym() for _ in range(1)], start_method='spawn')
-    env = VecFrameStack(env, n_stack=2)
-    env = VecCheckNan(env)
-    env = VecMonitor(env)
-    env = VecTransposeImage(env)
+def eval_model(
+        n_eval_envs,
+        n_eval_episodes,
+        frame_stack_size,
+        load_from_checkpoint,
+        image_scale,
+        greyscale,
+        random_stage,
+        stage_num,
+        device
+):
+    eval_env = SubprocVecEnv([lambda: TouhouGym(disable_render=False, stage_num=stage_num,
+                                                random_stage=random_stage, fps_limit=60, unlock_fps=False) for _ in
+                              range(n_eval_envs)], start_method='spawn')
+    eval_env = VecFrameStack(eval_env, n_stack=frame_stack_size)
+    eval_env = VecMonitor(eval_env)
 
     model = PPO.load(
-        saved_model,
-        env,
+        load_from_checkpoint,
+        eval_env,
         verbose=2,
-        device='mps'
+        device=device
     )
 
-    evaluate_policy(model, env, n_eval_episodes=50)
+    evaluate_policy(model, eval_env, n_eval_episodes=n_eval_episodes)

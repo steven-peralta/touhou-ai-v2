@@ -80,7 +80,7 @@ cdef class Runner:
 
 
 cdef class Window:
-    def __init__(self, backend, int width=640, int height=480, long fps_limit=-1, frameskip=1, bint no_delay=False):
+    def __init__(self, backend, bint disable_render, int width=640, int height=480, long fps_limit=-1, frameskip=1, bint no_delay=False):
         if backend is not None:
             self.win = backend.create_window(
                 'PyTouhou',
@@ -92,6 +92,7 @@ cdef class Window:
         self.frameskip = frameskip
         self.width = width
         self.height = height
+        self.disable_render = disable_render
 
 
     cdef void set_size(self, int width, int height) nogil:
@@ -115,8 +116,7 @@ cdef class Window:
 
     @cython.cdivision(True)
     cpdef bint run_frame(self) except -1:
-        cdef bint render = (self.win is not None and
-                            (self.frameskip <= 1 or not self.frame % self.frameskip))
+        cdef bint render = not self.disable_render and (self.win is not None and (self.frameskip <= 1 or not self.frame % self.frameskip))
 
         running = False
         if self.runner is not None:

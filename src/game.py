@@ -116,7 +116,7 @@ def start():
         sys.exit(1)
 
     GameRenderer = backend.GameRenderer
-    window = Window(backend, Interface.width, Interface.height, fps_limit=60, frameskip=0)
+    window = Window(backend=backend, width=Interface.width, height=Interface.height, disable_render=True, fps_limit=60, frameskip=-1)
     common = Common(resource_loader, characters, continues)
     interface = Interface(resource_loader, common.players[0])
     common.interface = interface
@@ -132,23 +132,24 @@ def start():
         common=common,
         prng=prng
     )
-    game.players[0].lives = 0
+    game.players[0].lives = 500
 
     runner.load_game(game, game.background, game.std.bgms, None, None)
 
 
     def run_frame():
         while window.run_frame():
+            print(game.lasers)
             # for bullet in game.bullets:
             #     intersect, distance = bullet_intersects_hitbox(game.players[0].x, game.players[0].y, game.players[0].sht.hitbox, bullet.x, bullet.y, bullet.dx, bullet.dy)
             #     if intersect:
             #         neg_reward = max(0.01, 1.0 - (distance / 50))
             #         print(neg_reward)
                     #reward -= neg_reward
-            for item in game.items:
-               intersect, distance = item_intersects_hitbox(game.players[0].x, game.players[0].y, game.players[0].sht.item_hitbox, item.x, item.y)
-               if intersect:
-                   print()
+            # for item in game.items:
+            #    intersect, distance = item_intersects_hitbox(game.players[0].x, game.players[0].y, game.players[0].sht.item_hitbox, item.x, item.y)
+            #    if intersect:
+            #        print()
             #bullet_coords = np.array([(b.x, b.y, b.dx, b.dy, b.speed / 1000, normalize_radians(b.angle)) for b in game.bullets]) if game.bullets else np.empty((0, 6))
             #enemy_coords = np.array([(enm.x, enm.y, enm.angle, enm.speed / 1000, enm.rotation_speed / 1000, enm.acceleration / 1000) for enm in game.enemies]) if game.enemies else np.empty((0, 6))
             #item_coords = np.array([(i.x, i.y, -1, -1, -1, -1) for i in game.items]) if game.items else np.empty((0, 6))
