@@ -20,7 +20,7 @@ from pytouhou.resource.loader import Loader
 from pytouhou.ui.opengl import backend
 from pytouhou.ui.window import Window
 
-from gym_utils import get_entities, get_boss, bullet_intersects_hitbox
+from gym_utils import get_entities, get_boss, bullet_intersects_hitbox, closest_point
 
 offset_x = 32
 offset_y = 16
@@ -32,30 +32,38 @@ DOWN = 32
 LEFT = 64
 RIGHT = 128
 SHOOT = 1
-#FOCUS = 4
+FOCUS = 4
 
 actions = [
     SHOOT,
+    FOCUS,
+    SHOOT | FOCUS,
     UP,
     UP | LEFT,
     UP | LEFT | SHOOT,
-    #UP | LEFT | SHOOT | FOCUS,
+    UP | LEFT | FOCUS,
+    UP | LEFT | SHOOT | FOCUS,
     UP | RIGHT,
     UP | RIGHT | SHOOT,
-    #UP | RIGHT | SHOOT | FOCUS,
+    UP | RIGHT | FOCUS,
+    UP | RIGHT | SHOOT | FOCUS,
     DOWN,
     DOWN | LEFT,
     DOWN | LEFT | SHOOT,
-    #DOWN | LEFT | SHOOT | FOCUS,
+    DOWN | LEFT | FOCUS,
+    DOWN | LEFT | SHOOT | FOCUS,
     DOWN | RIGHT,
     DOWN | RIGHT | SHOOT,
-    #DOWN | RIGHT | SHOOT | FOCUS,
+    DOWN | RIGHT | FOCUS,
+    DOWN | RIGHT | SHOOT | FOCUS,
     LEFT,
     LEFT | SHOOT,
-    #LEFT | SHOOT | FOCUS,
+    LEFT | FOCUS,
+    LEFT | SHOOT | FOCUS,
     RIGHT,
     RIGHT | SHOOT,
-    #RIGHT | SHOOT | FOCUS
+    RIGHT | FOCUS,
+    RIGHT | SHOOT | FOCUS
 ]
 
 game_data_locations = (pathsep.join(('CM.DAT', 'th06*_CM.DAT', '*CM.DAT', '*cm.dat')),
@@ -104,6 +112,9 @@ class TouhouGym(gymnasium.Env):
         self.observation_space = spaces.Dict({
             'game_player': spaces.Box(low=-1, high=1,shape=(5,), dtype=np.float32),
             'game_boss': spaces.Box(low=-1, high=1,shape=(2,), dtype=np.float32),
+            'game_closest_bullet': spaces.Box(low=-1, high=1,shape=(2,), dtype=np.float32),
+            'game_closest_item': spaces.Box(low=-1, high=1,shape=(2,), dtype=np.float32),
+            'game_closest_enemy': spaces.Box(low=-1, high=1,shape=(2,), dtype=np.float32),
             'pife_player_bullets': spaces.Box(low=-1, high=1,shape=(100, 4), dtype=np.float32),
             'pife_game_bullets': spaces.Box(
                 low=-1,
@@ -207,16 +218,57 @@ class TouhouGym(gymnasium.Env):
         self.rewards = 0
 
     def _get_obs(self):
-        hitbox = self.game.players[0].sht.hitbox
-        player = ((self.game.players[0].x + hitbox) / x, (self.game.players[0].x - hitbox) / x, (self.game.players[0].y + hitbox) / y, (self.game.players[0].y - hitbox) / y)
-        bullets = list(map(lambda bullet: (bullet.x / x, bullet.y / y, bullet.dx / x, bullet.dy / y) if bullet else (-1, -1, -1, -1), get_entities(self.game.bullets, m=250)))
-        enemies = list(map(lambda enemy: (enemy.x / x, enemy.y / y) if enemy else (-1, -1),
-                      get_entities(self.game.enemies, m=20)))
-        items = list(map(lambda item: (item.x / x, item.y / y) if item else (-1, -1),
-                      get_entities(self.game.items, m=20)))
-        players_bullets = list(map(lambda bullet: (bullet.x / x, bullet.y / y, bullet.dx / x, bullet.dy / y) if bullet else (-1, -1, -1, -1), get_entities(self.game.players_bullets, m=100)))
+        px, py = self.game.players[0].x, self.game.players[0].y
+        h = self.game.players[0].sht.hitbox
+        player_np = np.array(
+            [(px + h) / x, (px - h) / x, (py + h) / y, (py - h) / y],
+            dtype=np.float32)
 
-        return {'game_boss': np.asarray(get_boss(self.game.boss), dtype=np.float32), 'game_player': np.asarray(player, dtype=np.float32), 'pife_game_bullets': np.asarray(bullets, dtype=np.float32), 'pife_game_enemies': np.asarray(enemies, dtype=np.float32), 'pife_game_items': np.asarray(items, dtype=np.float32), 'pife_player_bullets': np.asarray(players_bullets, dtype=np.float32)}
+        def fill_array(entities, shape, transform_fn):
+            arr = np.full(shape, -1, dtype=np.float32)
+            valid = [(i, e) for i, e in enumerate(entities) if e]
+            if valid:
+                idxs, ents = zip(*valid)
+                arr[list(idxs)] = np.array([transform_fn(e) for e in ents], dtype=np.float32)
+            return arr
+
+        bullets_np = fill_array(
+            get_entities(self.game.bullets, m=250), (250, 4),
+            lambda b: (b.x / x, b.y / y, b.dx / x, b.dy / y)
+        )
+
+        players_bullets_np = fill_array(
+            get_entities(self.game.players_bullets, m=100), (100, 4),
+            lambda b: (b.x / x, b.y / y, b.dx / x, b.dy / y)
+        )
+
+        enemies_np = fill_array(
+            get_entities(self.game.enemies, m=20), (20, 2),
+            lambda e: (e.x / x, e.y / y)
+        )
+
+        items_np = fill_array(
+            get_entities(self.game.items, m=20), (20, 2),
+            lambda i: (i.x / x, i.y / y)
+        )
+
+        boss_np = np.asarray(get_boss(self.game.boss), dtype=np.float32)
+
+        closest_bullet = closest_point(bullets_np, (px, py))
+        closest_item = closest_point(items_np, (px, py))
+        closest_enemy = closest_point(enemies_np, (px, py))
+
+        return {
+            'game_player': player_np,
+            'game_boss': boss_np,
+            'game_closest_bullet': closest_bullet,
+            'game_closest_item': closest_item,
+            'game_closest_enemy': closest_enemy,
+            'pife_game_bullets': bullets_np,
+            'pife_player_bullets': players_bullets_np,
+            'pife_game_enemies': enemies_np,
+            'pife_game_items': items_np
+        }
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
@@ -236,9 +288,7 @@ class TouhouGym(gymnasium.Env):
 
         try:
             self.window.run_frame()
-        except NextStage:
-            terminated = True
-        except GameOver:
+        except (NextStage, GameOver):
             terminated = True
         observation = self._get_obs()
         is_dead = self.starting_lives > self.game.players[0].lives
@@ -247,15 +297,20 @@ class TouhouGym(gymnasium.Env):
         reward = self.game.players[0].rewards - self.rewards
         self.rewards = self.game.players[0].rewards
 
-        bullet_intersect = False
+        raw_bullets = get_entities(self.game.bullets, m=250)
+        bullet_array = np.full((250, 4), -1, dtype=np.float32)
+        for i, b in enumerate(raw_bullets):
+            if b:
+                bullet_array[i] = (b.x, b.y, b.dx, b.dy)
 
-        for bullet in self.game.bullets:
-            intersect, _ = bullet_intersects_hitbox(self.game.players[0].x, self.game.players[0].y,
-                                                           self.game.players[0].sht.hitbox, bullet.x, bullet.y,
-                                                           bullet.dx, bullet.dy)
-            if intersect:
-                bullet_intersect = True
-                break
+        valid_hits, _ = bullet_intersects_hitbox(
+            self.game.players[0].x,
+            self.game.players[0].y,
+            self.game.players[0].sht.hitbox,
+            bullet_array
+        )
+
+        bullet_intersect = np.any(valid_hits)
 
         if is_dead:
             reward -= 10
@@ -264,8 +319,6 @@ class TouhouGym(gymnasium.Env):
             reward -= 0.01  # neg reward for being in bullet vector
         else:
             reward += 0.01 # reward for staying alive
-
-
 
         return observation, reward, terminated, False, {}
 

@@ -7,27 +7,16 @@ y = 448
 
 def closest_point(points, point):
     if points.size == 0:
-        return -1, -1, -1, -1, -1, -1, -1  # Default value if no objects exist
+        return np.array([-1] * 2, dtype=np.float32)
 
     px, py = point
-    min_distance_sq = np.inf
-    closest = None
+    dx = points[:, 0] - px
+    dy = points[:, 1] - py
+    distances = np.sqrt(dx**2 + dy**2)
+    idx = np.argmin(distances)
 
-    for p in points:
-        n_x = p[0]
-        n_y = p[1]
-        dx = n_x - px
-        dy = n_y - py
-        distance_sq = np.sqrt(dx ** 2 + dy ** 2)
-        if distance_sq < min_distance_sq:
-            min_distance_sq = distance_sq
-            closest = (n_x, n_y, distance_sq, p[2], p[3], p[4], p[5])
-
-    # Normalize coordinates and distance
-    if closest:
-        return closest[0], closest[1], closest[2], closest[3], closest[4], closest[5], closest[6]  # Normalize
-
-    return -1, -1, -1, -1, -1, -1, -1  # Fallback in case of error
+    closest = points[idx]
+    return np.array([closest[0], closest[1]], dtype=np.float32)
 
 def item_intersects_hitbox(player_x, player_y, hitbox, item_x, item_y, max_distance=448):
     x1, x2 = player_x - hitbox, player_x + hitbox
@@ -43,44 +32,39 @@ def item_intersects_hitbox(player_x, player_y, hitbox, item_x, item_y, max_dista
     return True, distance
 
 
-def bullet_intersects_hitbox(player_x, player_y, hitbox, bullet_x, bullet_y, dx, dy, max_distance=590):
+def bullet_intersects_hitbox(player_x, player_y, hitbox, bullet_data, max_distance=590):
     x1, x2 = player_x - hitbox, player_x + hitbox
     y1, y2 = player_y - hitbox, player_y + hitbox
 
+    bx = bullet_data[:, 0]
+    by = bullet_data[:, 1]
+    dx = bullet_data[:, 2]
+    dy = bullet_data[:, 3]
+
     epsilon = 1e-8
-    dx = dx if dx != 0 else epsilon
-    dy = dy if dy != 0 else epsilon
+    dx = np.where(dx == 0, epsilon, dx)
+    dy = np.where(dy == 0, epsilon, dy)
 
-    tx1 = (x1 - bullet_x) / dx
-    tx2 = (x2 - bullet_x) / dx
-    ty1 = (y1 - bullet_y) / dy
-    ty2 = (y2 - bullet_y) / dy
+    tx1 = (x1 - bx) / dx
+    tx2 = (x2 - bx) / dx
+    ty1 = (y1 - by) / dy
+    ty2 = (y2 - by) / dy
 
-    # Ensure correct min/max intervals
-    tmin_x, tmax_x = min(tx1, tx2), max(tx1, tx2)
-    tmin_y, tmax_y = min(ty1, ty2), max(ty1, ty2)
+    tmin_x = np.minimum(tx1, tx2)
+    tmax_x = np.maximum(tx1, tx2)
+    tmin_y = np.minimum(ty1, ty2)
+    tmax_y = np.maximum(ty1, ty2)
 
-    # Find global entry and exit points
-    t_entry = max(tmin_x, tmin_y)
-    t_exit = min(tmax_x, tmax_y)
+    t_entry = np.maximum(tmin_x, tmin_y)
+    t_exit = np.minimum(tmax_x, tmax_y)
 
-    if t_exit < 0:
-        return False, -1
-    if t_entry > t_exit:
-        return False, -1
-    if t_entry > max_distance:
-        return False, -1
+    valid = (t_exit >= 0) & (t_entry <= t_exit) & (t_entry <= max_distance)
+    dists = np.sqrt((bx - player_x)**2 + (by - player_y)**2)
 
-    return True, np.sqrt((bullet_x - player_x) ** 2 + (bullet_y - player_y) ** 2)
+    return valid, dists
 
 def get_entities(entities, m=100):
-    result = []
-    for i in range(m):
-        if i > len(entities) - 1:
-            result.append(None)
-        else:
-            result.append(entities[i])
-    return result
+    return entities[:m] + [None] * max(0, m - len(entities))
 
 def get_boss(boss):
     if boss:
