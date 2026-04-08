@@ -11,7 +11,7 @@ RUN apt-get update -y &&  \
     virtualenv .venv && \
     export VIRTUAL_ENV=/project/.venv && \
     export PATH=/root/.cargo/bin:/project/.venv/bin:$PATH && \
-    rustup default nightly && \
+    rustup default nightly-2023-03-27 && \
     pip install -r requirements.txt && \
     python lib/touhou/setup.py build && \
     cd lib/touhou/python && maturin build --release && cd ../../.. && \
