@@ -1,7 +1,6 @@
 lib/touhou/target
 lib/touhou/dist
 **/*.rs.bk
-lib/touhou/Cargo.lock
 # swap
 [._]*.s[a-w][a-z]
 [._]s[a-w][a-z]
