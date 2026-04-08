@@ -26,5 +26,3 @@ jobs:
           tags: |
             docker.io/k9rosie/touhou-ai:latest
             docker.io/k9rosie/touhou-ai:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
