@@ -15,8 +15,6 @@ parser.add_argument('-n', '--n-envs', default=os.getenv('N_ENVS', multiprocessin
 parser.add_argument('--n-eval-envs', default=os.getenv('N_EVAL_ENVS', multiprocessing.cpu_count()), type=int, help='Number of eval environments')
 parser.add_argument('--frame-stack', default=os.getenv('FRAME_STACK', '2'), type=int, help='Frame stack')
 parser.add_argument('-l', '--load', default=os.getenv('LOAD_MODEL'), type=str, help='Load model')
-parser.add_argument('--frame-scale', default=os.getenv('FRAME_SCALE', '8'), type=int, help='Frame scale')
-parser.add_argument('--frame-color', action='store_true', default=False, help='Frame color')
 parser.add_argument('--stage', default=os.getenv('STAGE', '1'), type=int, help='Stage')
 parser.add_argument('--random-stage', action='store_true', help='Random stage')
 parser.add_argument('-d', '--device', default=os.getenv('DEVICE', 'cuda'), type=str, help='Device')
@@ -61,8 +59,6 @@ def main():
     n_eval_envs = args.n_eval_envs
     load_model = args.load
     frame_stack = args.frame_stack
-    frame_scale = args.frame_scale
-    frame_color = args.frame_color
     stage = args.stage
     random_stage = args.random_stage
     device = args.device
@@ -92,8 +88,6 @@ def main():
             n_envs=n_envs,
             n_eval_envs=n_eval_envs,
             frame_stack_size=frame_stack,
-            image_scale=frame_scale,
-            greyscale=not frame_color,
             stage_num=stage,
             random_stage=random_stage,
             device=device,
@@ -106,8 +100,6 @@ def main():
         eval_model(
             n_eval_envs=n_eval_envs,
             frame_stack_size=frame_stack,
-            image_scale=frame_scale,
-            greyscale=not frame_color,
             stage_num=stage,
             random_stage=random_stage,
             device=device,

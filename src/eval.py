@@ -1,3 +1,5 @@
+import sys
+
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize, VecFrameStack, VecCheckNan, VecMonitor, VecTransposeImage, DummyVecEnv
 from stable_baselines3 import PPO
 from touhou_gym import TouhouGym
@@ -8,12 +10,14 @@ def eval_model(
         n_eval_episodes,
         frame_stack_size,
         load_from_checkpoint,
-        image_scale,
-        greyscale,
         random_stage,
         stage_num,
         device
 ):
+    if not load_from_checkpoint:
+        print("Error: --load is required for evaluation")
+        sys.exit(1)
+
     eval_env = SubprocVecEnv([lambda: TouhouGym(disable_render=False, stage_num=stage_num,
                                                 random_stage=random_stage, fps_limit=60, unlock_fps=False) for _ in
                               range(n_eval_envs)], start_method='spawn')

@@ -23,8 +23,6 @@ def train(
         n_envs,
         n_eval_envs,
         load_from_checkpoint,
-        image_scale,
-        greyscale,
         stage_num,
         frame_stack_size,
         random_stage,
@@ -32,11 +30,12 @@ def train(
         n_steps,
         batch_size,
         n_epochs,
+        wandb_entity=None,
 ):
     run_name = datetime.now().strftime("touhou-%Y-%m-%d_%H-%M-%S")
 
     run = wandb.init(
-        entity="k9rosie",
+        entity=wandb_entity or os.getenv('WANDB_ENTITY', 'k9rosie'),
         project='touhou-ai-v2',
         sync_tensorboard=True,
         name=run_name
@@ -119,3 +118,6 @@ def train(
     except Exception as e:
         print(e)
         run.alert(title="Run crashed", text=f"Run crashed with this error: {e}")
+        raise
+    finally:
+        run.finish()

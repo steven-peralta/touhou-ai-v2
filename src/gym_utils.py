@@ -1,22 +1,29 @@
 import numpy as np
 
-offset_x = 32
-offset_y = 16
-x = 384
-y = 448
+GAME_WIDTH = 384
+GAME_HEIGHT = 448
 
 def closest_point(points, point):
     if points.size == 0:
-        return np.array([-1] * 2, dtype=np.float32)
+        return np.array([-1, -1, 0, 0], dtype=np.float32)
 
+    # Mask out padded -1 entries
+    mask = points[:, 0] != -1
+    if not np.any(mask):
+        return np.array([-1, -1, 0, 0], dtype=np.float32)
+
+    valid_points = points[mask]
     px, py = point
-    dx = points[:, 0] - px
-    dy = points[:, 1] - py
+    dx = valid_points[:, 0] - px
+    dy = valid_points[:, 1] - py
     distances = np.sqrt(dx**2 + dy**2)
     idx = np.argmin(distances)
 
-    closest = points[idx]
-    return np.array([closest[0], closest[1]], dtype=np.float32)
+    closest = valid_points[idx]
+    if points.shape[1] >= 4:
+        return np.array([closest[0], closest[1], closest[2], closest[3]], dtype=np.float32)
+    else:
+        return np.array([closest[0], closest[1], 0, 0], dtype=np.float32)
 
 def item_intersects_hitbox(player_x, player_y, hitbox, item_x, item_y, max_distance=448):
     x1, x2 = player_x - hitbox, player_x + hitbox
@@ -58,8 +65,8 @@ def bullet_intersects_hitbox(player_x, player_y, hitbox, bullet_data, max_distan
     t_entry = np.maximum(tmin_x, tmin_y)
     t_exit = np.minimum(tmax_x, tmax_y)
 
-    valid = (t_exit >= 0) & (t_entry <= t_exit) & (t_entry <= max_distance)
     dists = np.sqrt((bx - player_x)**2 + (by - player_y)**2)
+    valid = (t_exit >= 0) & (t_entry <= t_exit) & (dists <= max_distance)
 
     return valid, dists
 
@@ -68,6 +75,6 @@ def get_entities(entities, m=100):
 
 def get_boss(boss):
     if boss:
-        return boss.x / x, boss.y / y
+        return boss.x / GAME_WIDTH, boss.y / GAME_HEIGHT
     else:
         return -1, -1
