@@ -24,6 +24,7 @@ parser.add_argument('--n-steps', default=os.getenv('N_STEPS', '2048'), type=int,
 parser.add_argument('--batch-size', default=os.getenv('BATCH_SIZE', '64'), type=int, help='Batch size')
 parser.add_argument('--n-epochs', default=os.getenv('N_EPOCHS', '8'), type=int, help='N epochs')
 parser.add_argument('--n-eval-episodes', default=os.getenv('N_EVAL_EPISODES', '5'), type=int, help='N eval episodes')
+parser.add_argument('--game-res-path', default=os.getenv('GAME_RES_PATH', './res/game/'), type=str, help='Game resource path')
 
 stream_key = os.getenv('STREAM_KEY')
 
@@ -68,6 +69,7 @@ def main():
     batch_size = args.batch_size
     n_epochs = args.n_epochs
     n_eval_episodes = args.n_eval_episodes
+    game_res_path = args.game_res_path
 
     if headless:
         display = Display()
@@ -94,7 +96,8 @@ def main():
             load_from_checkpoint=load_model,
             n_steps=n_steps,
             batch_size=batch_size,
-            n_epochs=n_epochs
+            n_epochs=n_epochs,
+            game_res_path=game_res_path
         )
     else:
         eval_model(
@@ -104,7 +107,8 @@ def main():
             random_stage=random_stage,
             device=device,
             load_from_checkpoint=load_model,
-            n_eval_episodes=n_eval_episodes
+            n_eval_episodes=n_eval_episodes,
+            game_res_path=game_res_path
         )
 
 if __name__ == '__main__':

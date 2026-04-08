@@ -31,6 +31,7 @@ def train(
         batch_size,
         n_epochs,
         wandb_entity=None,
+        game_res_path='./res/game/',
 ):
     run_name = datetime.now().strftime("touhou-%Y-%m-%d_%H-%M-%S")
 
@@ -55,12 +56,12 @@ def train(
     eval_freq = max(eval_freq // n_envs, 1)
 
     # training envs
-    env = SubprocVecEnv([lambda: TouhouGym(disable_render=True, stage_num=stage_num, random_stage=random_stage) for _ in range(n_envs)], start_method='spawn')
+    env = SubprocVecEnv([lambda: TouhouGym(disable_render=True, stage_num=stage_num, random_stage=random_stage, game_path=game_res_path) for _ in range(n_envs)], start_method='spawn')
     env = VecFrameStack(env, n_stack=frame_stack_size)
     env = VecMonitor(env)
 
     # eval env
-    eval_env = SubprocVecEnv([lambda: TouhouGym(disable_render=False, stage_num=stage_num, random_stage=random_stage, fps_limit=60, unlock_fps=False) for _ in range(n_eval_envs)], start_method='spawn')
+    eval_env = SubprocVecEnv([lambda: TouhouGym(disable_render=False, stage_num=stage_num, random_stage=random_stage, fps_limit=60, unlock_fps=False, game_path=game_res_path) for _ in range(n_eval_envs)], start_method='spawn')
     eval_env = VecFrameStack(eval_env, n_stack=frame_stack_size)
     eval_env = VecMonitor(eval_env)
 
