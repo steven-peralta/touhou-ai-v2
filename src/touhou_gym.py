@@ -310,13 +310,15 @@ class TouhouGym(gymnasium.Env):
         if is_dead:
             reward -= 5.0
             terminated = True
-        elif np.any(valid_hits):
-            threatening_dists = dists[valid_hits]
-            danger_score = np.sum(1.0 / (threatening_dists + 1.0))
-            reward -= 0.1 * min(danger_score, 5.0)
         else:
-            # Escalating survival bonus: later frames worth more
+            # Escalating survival bonus: always awarded while alive
             reward += 0.01 * (1.0 + self.game.frame / 1000.0)
+
+            # Danger penalty: additive, on top of survival bonus
+            if np.any(valid_hits):
+                threatening_dists = dists[valid_hits]
+                danger_score = np.sum(1.0 / (threatening_dists + 1.0))
+                reward -= 0.1 * min(danger_score, 5.0)
 
         return observation, reward, terminated, False, {}
 
