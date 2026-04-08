@@ -24,4 +24,6 @@ lib/touhou/PyTouhou.egg-info/
 .idea/
 wandb/
 train/
+models/
+res/game/
 **/__pycache__
