@@ -93,6 +93,7 @@ def main():
             total_steps=total_steps,
             n_envs=n_envs,
             n_eval_envs=n_eval_envs,
+            n_eval_episodes=n_eval_episodes,
             frame_stack_size=frame_stack,
             stage_num=stage,
             random_stage=random_stage,

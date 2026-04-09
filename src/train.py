@@ -30,6 +30,7 @@ def train(
         n_steps,
         batch_size,
         n_epochs,
+        n_eval_episodes=5,
         wandb_entity=None,
         game_res_path='./res/game/',
         learning_rate=3e-4,
@@ -74,7 +75,7 @@ def train(
         best_model_save_path=best_path,
         log_path=logs_path,
         eval_freq=eval_freq,
-        n_eval_episodes=n_eval_envs,
+        n_eval_episodes=n_eval_episodes,
         deterministic=True
     )
     checkpoint_callback = CheckpointCallback(
