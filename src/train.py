@@ -60,8 +60,9 @@ def train(
     env = VecFrameStack(env, n_stack=frame_stack_size)
     env = VecMonitor(env)
 
-    # eval env
-    eval_env = SubprocVecEnv([lambda: TouhouGym(disable_render=False, stage_num=stage_num, random_stage=random_stage, fps_limit=60, unlock_fps=False, game_path=game_res_path) for _ in range(n_eval_envs)], start_method='spawn')
+    # eval env — render only if a display is available
+    has_display = os.environ.get('DISPLAY') is not None
+    eval_env = SubprocVecEnv([lambda: TouhouGym(disable_render=not has_display, stage_num=stage_num, random_stage=random_stage, fps_limit=60, unlock_fps=False, game_path=game_res_path) for _ in range(n_eval_envs)], start_method='spawn')
     eval_env = VecFrameStack(eval_env, n_stack=frame_stack_size)
     eval_env = VecMonitor(eval_env)
 
