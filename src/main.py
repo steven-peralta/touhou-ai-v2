@@ -25,6 +25,8 @@ parser.add_argument('--batch-size', default=os.getenv('BATCH_SIZE', '64'), type=
 parser.add_argument('--n-epochs', default=os.getenv('N_EPOCHS', '8'), type=int, help='N epochs')
 parser.add_argument('--n-eval-episodes', default=os.getenv('N_EVAL_EPISODES', '5'), type=int, help='N eval episodes')
 parser.add_argument('--game-res-path', default=os.getenv('GAME_RES_PATH', './res/game/'), type=str, help='Game resource path')
+parser.add_argument('--learning-rate', default=float(os.getenv('LEARNING_RATE', '3e-4')), type=float, help='Learning rate (linearly decayed)')
+parser.add_argument('--ent-coef', default=float(os.getenv('ENT_COEF', '0.0')), type=float, help='Entropy coefficient')
 
 stream_key = os.getenv('STREAM_KEY')
 
@@ -70,6 +72,8 @@ def main():
     n_epochs = args.n_epochs
     n_eval_episodes = args.n_eval_episodes
     game_res_path = args.game_res_path
+    learning_rate = args.learning_rate
+    ent_coef = args.ent_coef
 
     if headless:
         display = Display()
@@ -97,7 +101,9 @@ def main():
             n_steps=n_steps,
             batch_size=batch_size,
             n_epochs=n_epochs,
-            game_res_path=game_res_path
+            game_res_path=game_res_path,
+            learning_rate=learning_rate,
+            ent_coef=ent_coef,
         )
     else:
         eval_model(

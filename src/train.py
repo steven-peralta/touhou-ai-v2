@@ -32,6 +32,8 @@ def train(
         n_epochs,
         wandb_entity=None,
         game_res_path='./res/game/',
+        learning_rate=3e-4,
+        ent_coef=0.0,
 ):
     run_name = datetime.now().strftime("touhou-%Y-%m-%d_%H-%M-%S")
 
@@ -49,7 +51,7 @@ def train(
     save_freq = 100_000
     eval_freq = 100_000
 
-    learning_rate = linear_schedule(3e-4)
+    lr_schedule = linear_schedule(learning_rate)
     clip_range = linear_schedule(0.2)
 
     save_freq = max(save_freq // n_envs, 1)
@@ -104,8 +106,9 @@ def train(
             verbose=2,
             tensorboard_log=logs_path,
             n_epochs=n_epochs,
-            learning_rate=learning_rate,
+            learning_rate=lr_schedule,
             clip_range=clip_range,
+            ent_coef=ent_coef,
             policy_kwargs=policy_kwargs,
         )
 
