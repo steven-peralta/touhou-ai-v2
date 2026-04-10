@@ -27,6 +27,7 @@ parser.add_argument('--n-eval-episodes', default=os.getenv('N_EVAL_EPISODES', '5
 parser.add_argument('--game-res-path', default=os.getenv('GAME_RES_PATH', './res/game/'), type=str, help='Game resource path')
 parser.add_argument('--learning-rate', default=float(os.getenv('LEARNING_RATE', '3e-4')), type=float, help='Learning rate (linearly decayed)')
 parser.add_argument('--ent-coef', default=float(os.getenv('ENT_COEF', '0.0')), type=float, help='Entropy coefficient')
+parser.add_argument('--reset-timesteps', action='store_true', help='Reset timestep counter (restarts LR/clip schedule)')
 
 stream_key = os.getenv('STREAM_KEY')
 
@@ -74,6 +75,7 @@ def main():
     game_res_path = args.game_res_path
     learning_rate = args.learning_rate
     ent_coef = args.ent_coef
+    reset_timesteps = args.reset_timesteps
 
     if headless:
         display = Display()
@@ -105,6 +107,7 @@ def main():
             game_res_path=game_res_path,
             learning_rate=learning_rate,
             ent_coef=ent_coef,
+            reset_timesteps=reset_timesteps,
         )
     else:
         eval_model(

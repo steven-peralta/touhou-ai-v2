@@ -12,9 +12,9 @@ from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from stable_baselines3 import PPO
 
 
-def linear_schedule(initial_value):
+def linear_schedule(initial_value, min_value=0.0):
     def func(progress_remaining):
-        return progress_remaining * initial_value
+        return max(progress_remaining * initial_value, min_value)
     return func
 
 def train(
@@ -35,6 +35,7 @@ def train(
         game_res_path='./res/game/',
         learning_rate=3e-4,
         ent_coef=0.0,
+        reset_timesteps=False,
 ):
     run_name = datetime.now().strftime("touhou-%Y-%m-%d_%H-%M-%S")
 
@@ -52,8 +53,8 @@ def train(
     save_freq = 100_000
     eval_freq = 100_000
 
-    lr_schedule = linear_schedule(learning_rate)
-    clip_range = linear_schedule(0.2)
+    lr_schedule = learning_rate  # constant LR
+    clip_range = linear_schedule(0.2, min_value=0.05)
 
     save_freq = max(save_freq // n_envs, 1)
     eval_freq = max(eval_freq // n_envs, 1)
@@ -116,7 +117,7 @@ def train(
     try:
         model.learn(
             total_timesteps=total_steps,
-            reset_num_timesteps=False,
+            reset_num_timesteps=reset_timesteps,
             progress_bar=True,
             callback=[checkpoint_callback, eval_callback, wandb_callback],
             tb_log_name=run_name
