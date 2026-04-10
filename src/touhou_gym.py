@@ -104,6 +104,7 @@ class TouhouGym(gymnasium.Env):
         # [direction(9), shoot(2), focus(2), bomb(2)]
         self.action_space = spaces.MultiDiscrete([9, 2, 2, 2])
         self.current_score = 0
+        self.last_graze = 0
 
         self.characters = [0]
         self.continues = 0
@@ -192,6 +193,7 @@ class TouhouGym(gymnasium.Env):
 
         self.game.players[0].lives = 0
         self.current_score = 0
+        self.last_graze = 0
 
     def _get_obs(self):
         px, py = self.game.players[0].x, self.game.players[0].y
@@ -293,10 +295,16 @@ class TouhouGym(gymnasium.Env):
         is_dead = self.starting_lives > self.game.players[0].lives
         self.game.players[0].lives = 0
 
-        # Normalized score delta as base reward
+        # Normalized score delta as base reward, with graze contribution removed
+        # so the agent doesn't farm passive graze rewards instead of dodging.
+        # Engine awards 500 pts per graze (game.pyx:441,466).
         score_delta = self.game.players[0].score - self.current_score
+        graze_delta = self.game.players[0].graze - self.last_graze
         self.current_score = self.game.players[0].score
-        reward = score_delta / 1000.0
+        self.last_graze = self.game.players[0].graze
+
+        real_score_delta = score_delta - (graze_delta * 500)
+        reward = real_score_delta / 1000.0
 
         # Gradient bullet danger
         bullet_array = self._get_raw_bullet_array()
