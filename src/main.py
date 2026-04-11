@@ -17,6 +17,8 @@ parser.add_argument('--frame-stack', default=os.getenv('FRAME_STACK', '2'), type
 parser.add_argument('-l', '--load', default=os.getenv('LOAD_MODEL'), type=str, help='Load model')
 parser.add_argument('--stage', default=os.getenv('STAGE', '1'), type=int, help='Stage')
 parser.add_argument('--random-stage', action='store_true', help='Random stage')
+parser.add_argument('--train-stages', default=None, type=str, help='Comma-separated list of training stages (e.g. 1,2,3,4,5)')
+parser.add_argument('--eval-stages', default=None, type=str, help='Comma-separated list of eval stages (e.g. 6)')
 parser.add_argument('-d', '--device', default=os.getenv('DEVICE', 'cuda'), type=str, help='Device')
 parser.add_argument('--stream', action='store_true', help='stream')
 parser.add_argument('--headless', action='store_true', help='Headless')
@@ -78,6 +80,8 @@ def main():
     ent_coef = args.ent_coef
     reset_timesteps = args.reset_timesteps
     eval_freq = args.eval_freq
+    train_stages = [int(s) for s in args.train_stages.split(',')] if args.train_stages else None
+    eval_stages = [int(s) for s in args.eval_stages.split(',')] if args.eval_stages else None
 
     if headless:
         display = Display()
@@ -111,6 +115,8 @@ def main():
             ent_coef=ent_coef,
             reset_timesteps=reset_timesteps,
             eval_freq=eval_freq,
+            train_stages=train_stages,
+            eval_stages=eval_stages,
         )
     else:
         eval_model(
@@ -118,6 +124,7 @@ def main():
             frame_stack_size=frame_stack,
             stage_num=stage,
             random_stage=random_stage,
+            stages=eval_stages,
             device=device,
             load_from_checkpoint=load_model,
             n_eval_episodes=n_eval_episodes,

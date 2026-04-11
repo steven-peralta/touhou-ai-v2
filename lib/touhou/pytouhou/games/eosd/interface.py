@@ -50,6 +50,7 @@ class Interface:
             'framerate': Text((512, 464), self.ascii_anm, front),
             'debug?': Text((500, 246), self.ascii_anm, front),
             'debug_y': Text((500, 266), self.ascii_anm, front),
+            'debug_bullets': Text((500, 286), self.ascii_anm, front),
 
             # Only when there is a boss.
             'boss_lives': Text((80, 16), self.ascii_anm),
@@ -126,6 +127,7 @@ class Interface:
             px, py = self.game.players[0].x, self.game.players[0].y
             self.labels['debug?'].set_text('x:%.1f' % px)
             self.labels['debug_y'].set_text('y:%.1f' % py)
+            self.labels['debug_bullets'].set_text('blt:%d' % len(self.game.bullets))
 
         if self.game.boss:
             boss = self.game.boss

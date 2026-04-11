@@ -57,6 +57,7 @@ class TouhouGym(gymnasium.Env):
             game_path='./res/game/',
             stage_num=1,
             random_stage=False,
+            stages=None,
             fps_limit=-1,
             unlock_fps=True,
             disable_render=False,
@@ -76,6 +77,7 @@ class TouhouGym(gymnasium.Env):
 
         self.observation_space = spaces.Dict({
             'game_player': spaces.Box(low=-1, high=1,shape=(4,), dtype=np.float32),
+            'game_stage': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),
             'game_boss': spaces.Box(low=-1, high=1,shape=(2,), dtype=np.float32),
             'game_closest_bullet': spaces.Box(low=-1, high=1,shape=(4,), dtype=np.float32),
             'game_closest_item': spaces.Box(low=-1, high=1,shape=(4,), dtype=np.float32),
@@ -84,19 +86,19 @@ class TouhouGym(gymnasium.Env):
             'pife_game_bullets': spaces.Box(
                 low=-1,
                 high=1,
-                shape=(500, 4),
+                shape=(640, 5),
                 dtype=np.float32
             ),
             'pife_game_enemies': spaces.Box(
                 low=-1,
                 high=1,
-                shape=(20, 2),
+                shape=(20, 3),
                 dtype=np.float32
             ),
             'pife_game_items': spaces.Box(
                 low=-1,
                 high=1,
-                shape=(20, 2),
+                shape=(20, 3),
                 dtype=np.float32
             )
         })
@@ -109,7 +111,13 @@ class TouhouGym(gymnasium.Env):
         self.characters = [0]
         self.continues = 0
         self.random_stage = random_stage
-        self.stage_num = stage_num if not random_stage else random.randint(1, 6)
+        self.stages = stages
+        if stages:
+            self.stage_num = random.choice(stages)
+        elif random_stage:
+            self.stage_num = random.randint(1, 6)
+        else:
+            self.stage_num = stage_num
         self.rank = 3
         self.difficulty = 16
 
@@ -163,7 +171,11 @@ class TouhouGym(gymnasium.Env):
 
         self.characters = [0]
         self.continues = 0
-        self.stage_num = self.stage_num if not self.random_stage else random.randint(1, 6)
+        if self.stages:
+            self.stage_num = random.choice(self.stages)
+        elif self.random_stage:
+            self.stage_num = random.randint(1, 6)
+
         self.rank = 3
         self.difficulty = 16
 
@@ -212,9 +224,10 @@ class TouhouGym(gymnasium.Env):
             return arr
 
         bullets_np = fill_array(
-            get_onscreen_entities(self.game.bullets, m=500), (500, 4),
+            get_onscreen_entities(self.game.bullets, m=640), (640, 5),
             lambda b: (b.x / GAME_WIDTH, b.y / GAME_HEIGHT,
-                       b.dx / GAME_WIDTH, b.dy / GAME_HEIGHT)
+                       b.dx / GAME_WIDTH, b.dy / GAME_HEIGHT,
+                       b._bullet_type.type_id / 9.0)
         )
 
         players_bullets_np = fill_array(
@@ -224,13 +237,15 @@ class TouhouGym(gymnasium.Env):
         )
 
         enemies_np = fill_array(
-            get_onscreen_entities(self.game.enemies, m=20), (20, 2),
-            lambda e: (e.x / GAME_WIDTH, e.y / GAME_HEIGHT)
+            get_onscreen_entities(self.game.enemies, m=20), (20, 3),
+            lambda e: (e.x / GAME_WIDTH, e.y / GAME_HEIGHT,
+                       (e._type & 0xFF) / 255.0)
         )
 
         items_np = fill_array(
-            get_onscreen_entities(self.game.items, m=20), (20, 2),
-            lambda i: (i.x / GAME_WIDTH, i.y / GAME_HEIGHT)
+            get_onscreen_entities(self.game.items, m=20), (20, 3),
+            lambda i: (i.x / GAME_WIDTH, i.y / GAME_HEIGHT,
+                       i._type / 6.0)
         )
 
         boss_np = np.asarray(get_boss(self.game.boss), dtype=np.float32)
@@ -241,8 +256,11 @@ class TouhouGym(gymnasium.Env):
         closest_item = closest_point(items_np, (norm_px, norm_py))
         closest_enemy = closest_point(enemies_np, (norm_px, norm_py))
 
+        stage_np = np.array([self.stage_num / 6.0], dtype=np.float32)
+
         return {
             'game_player': player_np,
+            'game_stage': stage_np,
             'game_boss': boss_np,
             'game_closest_bullet': closest_bullet,
             'game_closest_item': closest_item,
@@ -263,8 +281,8 @@ class TouhouGym(gymnasium.Env):
         return observation, {}
 
     def _get_raw_bullet_array(self):
-        raw_bullets = get_onscreen_entities(self.game.bullets, m=500)
-        bullet_array = np.full((500, 4), -1, dtype=np.float32)
+        raw_bullets = get_onscreen_entities(self.game.bullets, m=640)
+        bullet_array = np.full((640, 4), -1, dtype=np.float32)
         for i, b in enumerate(raw_bullets):
             if b:
                 bullet_array[i] = (b.x, b.y, b.dx, b.dy)

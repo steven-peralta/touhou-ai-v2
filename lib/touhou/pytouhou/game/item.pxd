@@ -15,7 +15,7 @@ cdef class Item(Element):
     cdef public ItemType _item_type
 
     cdef unsigned long frame
-    cdef long _type
+    cdef public long _type
     cdef double angle, speed
     cdef Game _game
     cdef Player player
