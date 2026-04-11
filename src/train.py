@@ -36,6 +36,7 @@ def train(
         learning_rate=3e-4,
         ent_coef=0.0,
         reset_timesteps=False,
+        eval_freq=100_000,
 ):
     run_name = datetime.now().strftime("touhou-%Y-%m-%d_%H-%M-%S")
 
@@ -51,7 +52,6 @@ def train(
     logs_path = os.path.join(save_base_path, f'logs')
 
     save_freq = 100_000
-    eval_freq = 100_000
 
     lr_schedule = learning_rate  # constant LR
     clip_range = linear_schedule(0.2, min_value=0.05)
