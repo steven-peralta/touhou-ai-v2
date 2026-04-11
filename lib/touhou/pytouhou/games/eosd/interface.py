@@ -48,7 +48,8 @@ class Interface:
             'graze': Text((500, 206), self.ascii_anm, front, text=b'0'),
             'points': Text((500, 226), self.ascii_anm, front, text=b'0'),
             'framerate': Text((512, 464), self.ascii_anm, front),
-            'debug?': Text((0, 464), self.ascii_anm, front),
+            'debug?': Text((500, 246), self.ascii_anm, front),
+            'debug_y': Text((500, 266), self.ascii_anm, front),
 
             # Only when there is a boss.
             'boss_lives': Text((80, 16), self.ascii_anm),
@@ -120,6 +121,11 @@ class Interface:
         self.labels['points'].set_text('%d' % player_state.points)
         self.labels['player'].set_value(player_state.lives)
         self.labels['bombs'].set_value(player_state.bombs)
+
+        if self.game and self.game.players:
+            px, py = self.game.players[0].x, self.game.players[0].y
+            self.labels['debug?'].set_text('x:%.1f' % px)
+            self.labels['debug_y'].set_text('y:%.1f' % py)
 
         if self.game.boss:
             boss = self.game.boss

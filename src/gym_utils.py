@@ -73,6 +73,10 @@ def bullet_intersects_hitbox(player_x, player_y, hitbox, bullet_data, max_distan
 def get_entities(entities, m=100):
     return entities[:m] + [None] * max(0, m - len(entities))
 
+def get_onscreen_entities(entities, m=100):
+    visible = [e for e in entities if e and 0 <= e.x <= GAME_WIDTH and 0 <= e.y <= GAME_HEIGHT]
+    return visible[:m] + [None] * max(0, m - len(visible))
+
 def get_boss(boss):
     if boss:
         return boss.x / GAME_WIDTH, boss.y / GAME_HEIGHT

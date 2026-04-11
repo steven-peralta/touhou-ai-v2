@@ -19,7 +19,7 @@ from pytouhou.resource.loader import Loader
 from pytouhou.ui.opengl import backend
 from pytouhou.ui.window import Window
 
-from gym_utils import get_entities, get_boss, bullet_intersects_hitbox, closest_point, GAME_WIDTH, GAME_HEIGHT
+from gym_utils import get_entities, get_onscreen_entities, get_boss, bullet_intersects_hitbox, closest_point, GAME_WIDTH, GAME_HEIGHT
 
 UP = 16
 DOWN = 32
@@ -84,7 +84,7 @@ class TouhouGym(gymnasium.Env):
             'pife_game_bullets': spaces.Box(
                 low=-1,
                 high=1,
-                shape=(250, 4),
+                shape=(500, 4),
                 dtype=np.float32
             ),
             'pife_game_enemies': spaces.Box(
@@ -212,24 +212,24 @@ class TouhouGym(gymnasium.Env):
             return arr
 
         bullets_np = fill_array(
-            get_entities(self.game.bullets, m=250), (250, 4),
+            get_onscreen_entities(self.game.bullets, m=500), (500, 4),
             lambda b: (b.x / GAME_WIDTH, b.y / GAME_HEIGHT,
                        b.dx / GAME_WIDTH, b.dy / GAME_HEIGHT)
         )
 
         players_bullets_np = fill_array(
-            get_entities(self.game.players_bullets, m=100), (100, 4),
+            get_onscreen_entities(self.game.players_bullets, m=100), (100, 4),
             lambda b: (b.x / GAME_WIDTH, b.y / GAME_HEIGHT,
                        b.dx / GAME_WIDTH, b.dy / GAME_HEIGHT)
         )
 
         enemies_np = fill_array(
-            get_entities(self.game.enemies, m=20), (20, 2),
+            get_onscreen_entities(self.game.enemies, m=20), (20, 2),
             lambda e: (e.x / GAME_WIDTH, e.y / GAME_HEIGHT)
         )
 
         items_np = fill_array(
-            get_entities(self.game.items, m=20), (20, 2),
+            get_onscreen_entities(self.game.items, m=20), (20, 2),
             lambda i: (i.x / GAME_WIDTH, i.y / GAME_HEIGHT)
         )
 
@@ -263,8 +263,8 @@ class TouhouGym(gymnasium.Env):
         return observation, {}
 
     def _get_raw_bullet_array(self):
-        raw_bullets = get_entities(self.game.bullets, m=250)
-        bullet_array = np.full((250, 4), -1, dtype=np.float32)
+        raw_bullets = get_onscreen_entities(self.game.bullets, m=500)
+        bullet_array = np.full((500, 4), -1, dtype=np.float32)
         for i, b in enumerate(raw_bullets):
             if b:
                 bullet_array[i] = (b.x, b.y, b.dx, b.dy)
