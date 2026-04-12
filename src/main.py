@@ -22,6 +22,7 @@ parser.add_argument('--eval-stages', default=None, type=str, help='Comma-separat
 parser.add_argument('-d', '--device', default=os.getenv('DEVICE', 'cuda'), type=str, help='Device')
 parser.add_argument('--stream', action='store_true', help='stream')
 parser.add_argument('--headless', action='store_true', help='Headless')
+parser.add_argument('--render-train', action='store_true', help='Enable rendering on training envs')
 parser.add_argument('--n-steps', default=os.getenv('N_STEPS', '2048'), type=int, help='N steps')
 parser.add_argument('--batch-size', default=os.getenv('BATCH_SIZE', '64'), type=int, help='Batch size')
 parser.add_argument('--n-epochs', default=os.getenv('N_EPOCHS', '8'), type=int, help='N epochs')
@@ -80,6 +81,7 @@ def main():
     ent_coef = args.ent_coef
     reset_timesteps = args.reset_timesteps
     eval_freq = args.eval_freq
+    render_train = args.render_train
     train_stages = [int(s) for s in args.train_stages.split(',')] if args.train_stages else None
     eval_stages = [int(s) for s in args.eval_stages.split(',')] if args.eval_stages else None
 
@@ -117,6 +119,7 @@ def main():
             eval_freq=eval_freq,
             train_stages=train_stages,
             eval_stages=eval_stages,
+            render_train=render_train,
         )
     else:
         eval_model(

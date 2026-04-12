@@ -19,7 +19,7 @@ from pytouhou.resource.loader import Loader
 from pytouhou.ui.opengl import backend
 from pytouhou.ui.window import Window
 
-from gym_utils import get_entities, get_onscreen_entities, get_boss, bullet_intersects_hitbox, closest_point, GAME_WIDTH, GAME_HEIGHT
+from gym_utils import get_entities, get_boss, bullet_intersects_hitbox, closest_point, GAME_WIDTH, GAME_HEIGHT
 
 UP = 16
 DOWN = 32
@@ -207,11 +207,16 @@ class TouhouGym(gymnasium.Env):
             self.runner.load_game(self.game, self.game.background, self.game.std.bgms, None, None)
 
         self.game.players[0].lives = 0
-        self.current_score = 0
-        self.last_graze = 0
+
+        # Fast-forward past the empty pre-spawn phase
+        while len(self.game.enemies) == 0 and len(self.game.bullets) == 0:
+            self.game.run_iter([0])
+
+        self.current_score = self.game.players[0].score
+        self.last_graze = self.game.players[0].graze
         self.still_frames = 0
-        self.last_px = 0.0
-        self.last_py = 0.0
+        self.last_px = self.game.players[0].x
+        self.last_py = self.game.players[0].y
 
     def _get_obs(self):
         px, py = self.game.players[0].x, self.game.players[0].y
@@ -230,26 +235,26 @@ class TouhouGym(gymnasium.Env):
             return arr
 
         bullets_np = fill_array(
-            get_onscreen_entities(self.game.bullets, m=640), (640, 5),
+            get_entities(self.game.bullets, m=640), (640, 5),
             lambda b: (b.x / GAME_WIDTH, b.y / GAME_HEIGHT,
                        b.dx / GAME_WIDTH, b.dy / GAME_HEIGHT,
                        b._bullet_type.type_id / 9.0)
         )
 
         players_bullets_np = fill_array(
-            get_onscreen_entities(self.game.players_bullets, m=100), (100, 4),
+            get_entities(self.game.players_bullets, m=100), (100, 4),
             lambda b: (b.x / GAME_WIDTH, b.y / GAME_HEIGHT,
                        b.dx / GAME_WIDTH, b.dy / GAME_HEIGHT)
         )
 
         enemies_np = fill_array(
-            get_onscreen_entities(self.game.enemies, m=20), (20, 3),
+            get_entities(self.game.enemies, m=20), (20, 3),
             lambda e: (e.x / GAME_WIDTH, e.y / GAME_HEIGHT,
                        (e._type & 0xFF) / 255.0)
         )
 
         items_np = fill_array(
-            get_onscreen_entities(self.game.items, m=20), (20, 3),
+            get_entities(self.game.items, m=20), (20, 3),
             lambda i: (i.x / GAME_WIDTH, i.y / GAME_HEIGHT,
                        i._type / 6.0)
         )
@@ -287,7 +292,7 @@ class TouhouGym(gymnasium.Env):
         return observation, {}
 
     def _get_raw_bullet_array(self):
-        raw_bullets = get_onscreen_entities(self.game.bullets, m=640)
+        raw_bullets = get_entities(self.game.bullets, m=640)
         bullet_array = np.full((640, 4), -1, dtype=np.float32)
         for i, b in enumerate(raw_bullets):
             if b:

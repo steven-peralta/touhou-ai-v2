@@ -39,6 +39,7 @@ def train(
         eval_freq=100_000,
         train_stages=None,
         eval_stages=None,
+        render_train=False,
 ):
     run_name = datetime.now().strftime("touhou-%Y-%m-%d_%H-%M-%S")
 
@@ -62,7 +63,7 @@ def train(
     eval_freq = max(eval_freq // n_envs, 1)
 
     # training envs
-    env = SubprocVecEnv([lambda: TouhouGym(disable_render=True, stage_num=stage_num, random_stage=random_stage, stages=train_stages, game_path=game_res_path) for _ in range(n_envs)], start_method='spawn')
+    env = SubprocVecEnv([lambda: TouhouGym(disable_render=not render_train, stage_num=stage_num, random_stage=random_stage, stages=train_stages, game_path=game_res_path) for _ in range(n_envs)], start_method='spawn')
     env = VecFrameStack(env, n_stack=frame_stack_size)
     env = VecMonitor(env)
 
