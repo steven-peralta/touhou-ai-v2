@@ -107,6 +107,9 @@ class TouhouGym(gymnasium.Env):
         self.action_space = spaces.MultiDiscrete([9, 2, 2, 2])
         self.current_score = 0
         self.last_graze = 0
+        self.still_frames = 0
+        self.last_px = 0.0
+        self.last_py = 0.0
 
         self.characters = [0]
         self.continues = 0
@@ -206,6 +209,9 @@ class TouhouGym(gymnasium.Env):
         self.game.players[0].lives = 0
         self.current_score = 0
         self.last_graze = 0
+        self.still_frames = 0
+        self.last_px = 0.0
+        self.last_py = 0.0
 
     def _get_obs(self):
         px, py = self.game.players[0].x, self.game.players[0].y
@@ -333,18 +339,38 @@ class TouhouGym(gymnasium.Env):
             bullet_array
         )
 
+        px, py = self.game.players[0].x, self.game.players[0].y
+
         if is_dead:
             reward -= 5.0
             terminated = True
         else:
-            # Escalating survival bonus: always awarded while alive
-            reward += 0.01 * (1.0 + self.game.frame / 1000.0)
-
-            # Danger penalty: additive, on top of survival bonus
+            # Danger penalty
             if np.any(valid_hits):
                 threatening_dists = dists[valid_hits]
                 danger_score = np.sum(1.0 / (threatening_dists + 1.0))
                 reward -= 0.1 * min(danger_score, 5.0)
+
+            # Stillness penalty: penalize staying in the same position for >60 frames
+            moved = abs(px - self.last_px) > 1.0 or abs(py - self.last_py) > 1.0
+            if moved:
+                self.still_frames = 0
+            else:
+                self.still_frames += 1
+            if self.still_frames > 60:
+                reward -= 0.05
+
+            # Edge penalty: penalize top, left, and right edges (bottom is okay)
+            edge_margin = 32.0
+            if py < edge_margin:  # too close to top
+                reward -= 0.02
+            if px < edge_margin:  # too close to left
+                reward -= 0.02
+            if px > GAME_WIDTH - edge_margin:  # too close to right
+                reward -= 0.02
+
+        self.last_px = px
+        self.last_py = py
 
         return observation, reward, terminated, False, {}
 
