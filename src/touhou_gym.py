@@ -61,6 +61,7 @@ class TouhouGym(gymnasium.Env):
             fps_limit=-1,
             unlock_fps=True,
             disable_render=False,
+            mortal=False,
     ):
         self.gl_options = {
             'flavor': 'compatibility',
@@ -70,6 +71,7 @@ class TouhouGym(gymnasium.Env):
             'backend': 'opengl'
         }
         self.disable_render = disable_render
+        self.mortal = mortal
         self.render_mode = 'rgb_array'
         self.resource_path = abspath(game_path)
         self.fps_limit = fps_limit
@@ -206,7 +208,8 @@ class TouhouGym(gymnasium.Env):
             self.window.set_runner(self.runner)
             self.runner.load_game(self.game, self.game.background, self.game.std.bgms, None, None)
 
-        self.game.players[0].lives = 0
+        # Mortal mode: 0 lives (die on first hit). Invincible mode: many lives.
+        self.game.players[0].lives = 0 if self.mortal else 9999
 
         # Fast-forward past the empty pre-spawn phase
         while len(self.game.enemies) == 0 and len(self.game.bullets) == 0:
@@ -320,13 +323,28 @@ class TouhouGym(gymnasium.Env):
             except (NextStage, GameOver):
                 terminated = True
 
+        # Skip cutscenes/dialogue by fast-forwarding with no input
+        while self.game.msg_wait and not terminated:
+            if self.disable_render:
+                try:
+                    self.game.run_iter([SHOOT])
+                except (NextStage, GameOver):
+                    terminated = True
+            else:
+                self.window.set_keystate(SHOOT)
+                try:
+                    self.window.run_frame()
+                except (NextStage, GameOver):
+                    terminated = True
+
         observation = self._get_obs()
-        is_dead = self.starting_lives > self.game.players[0].lives
-        self.game.players[0].lives = 0
+
+        # Detect hit via lives dropping
+        expected_lives = 0 if self.mortal else 9999
+        was_hit = self.game.players[0].lives < expected_lives
+        self.game.players[0].lives = expected_lives
 
         # Normalized score delta as base reward, with graze contribution removed
-        # so the agent doesn't farm passive graze rewards instead of dodging.
-        # Engine awards 500 pts per graze (game.pyx:441,466).
         score_delta = self.game.players[0].score - self.current_score
         graze_delta = self.game.players[0].graze - self.last_graze
         self.current_score = self.game.players[0].score
@@ -346,33 +364,37 @@ class TouhouGym(gymnasium.Env):
 
         px, py = self.game.players[0].x, self.game.players[0].y
 
-        if is_dead:
-            reward -= 5.0
-            terminated = True
-        else:
-            # Danger penalty
-            if np.any(valid_hits):
-                threatening_dists = dists[valid_hits]
-                danger_score = np.sum(1.0 / (threatening_dists + 1.0))
-                reward -= 0.1 * min(danger_score, 5.0)
-
-            # Stillness penalty: penalize staying in the same position for >60 frames
-            moved = abs(px - self.last_px) > 1.0 or abs(py - self.last_py) > 1.0
-            if moved:
-                self.still_frames = 0
+        # Hit handling: mortal mode terminates, invincible mode penalizes
+        if was_hit:
+            if self.mortal:
+                reward -= 5.0
+                terminated = True
             else:
-                self.still_frames += 1
-            if self.still_frames > 60:
-                reward -= 0.05
+                reward -= 2.0
 
-            # Edge penalty: penalize top, left, and right edges (bottom is okay)
-            edge_margin = 32.0
-            if py < edge_margin:  # too close to top
-                reward -= 0.02
-            if px < edge_margin:  # too close to left
-                reward -= 0.02
-            if px > GAME_WIDTH - edge_margin:  # too close to right
-                reward -= 0.02
+        # Danger penalty
+        if np.any(valid_hits):
+            threatening_dists = dists[valid_hits]
+            danger_score = np.sum(1.0 / (threatening_dists + 1.0))
+            reward -= 0.1 * min(danger_score, 5.0)
+
+        # Stillness penalty: penalize staying in the same position for >60 frames
+        moved = abs(px - self.last_px) > 1.0 or abs(py - self.last_py) > 1.0
+        if moved:
+            self.still_frames = 0
+        else:
+            self.still_frames += 1
+        if self.still_frames > 60:
+            reward -= 0.05
+
+        # Edge penalty: penalize top, left, and right edges (bottom is okay)
+        edge_margin = 32.0
+        if py < edge_margin:  # too close to top
+            reward -= 0.02
+        if px < edge_margin:  # too close to left
+            reward -= 0.02
+        if px > GAME_WIDTH - edge_margin:  # too close to right
+            reward -= 0.02
 
         self.last_px = px
         self.last_py = py
