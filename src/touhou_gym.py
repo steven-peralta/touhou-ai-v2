@@ -84,7 +84,6 @@ class TouhouGym(gymnasium.Env):
             'game_closest_bullet': spaces.Box(low=-1, high=1,shape=(4,), dtype=np.float32),
             'game_closest_item': spaces.Box(low=-1, high=1,shape=(4,), dtype=np.float32),
             'game_closest_enemy': spaces.Box(low=-1, high=1,shape=(4,), dtype=np.float32),
-            'pife_player_bullets': spaces.Box(low=-1, high=1,shape=(100, 4), dtype=np.float32),
             'pife_game_bullets': spaces.Box(
                 low=-1,
                 high=1,
@@ -244,12 +243,6 @@ class TouhouGym(gymnasium.Env):
                        b._bullet_type.type_id / 9.0)
         )
 
-        players_bullets_np = fill_array(
-            get_entities(self.game.players_bullets, m=100), (100, 4),
-            lambda b: (b.x / GAME_WIDTH, b.y / GAME_HEIGHT,
-                       b.dx / GAME_WIDTH, b.dy / GAME_HEIGHT)
-        )
-
         enemies_np = fill_array(
             get_entities(self.game.enemies, m=20), (20, 3),
             lambda e: (e.x / GAME_WIDTH, e.y / GAME_HEIGHT,
@@ -280,7 +273,6 @@ class TouhouGym(gymnasium.Env):
             'game_closest_item': closest_item,
             'game_closest_enemy': closest_enemy,
             'pife_game_bullets': bullets_np,
-            'pife_player_bullets': players_bullets_np,
             'pife_game_enemies': enemies_np,
             'pife_game_items': items_np
         }
