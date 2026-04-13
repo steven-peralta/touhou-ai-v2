@@ -323,19 +323,19 @@ class TouhouGym(gymnasium.Env):
             except (NextStage, GameOver):
                 terminated = True
 
-        # Skip cutscenes/dialogue by fast-forwarding with no input
+        # Skip cutscenes/dialogue by fast-forwarding with shoot pressed
         while self.game.msg_wait and not terminated:
-            if self.disable_render:
-                try:
+            try:
+                if self.disable_render:
                     self.game.run_iter([SHOOT])
-                except (NextStage, GameOver):
-                    terminated = True
-            else:
-                self.window.set_keystate(SHOOT)
-                try:
+                else:
+                    self.window.set_keystate(SHOOT)
                     self.window.run_frame()
-                except (NextStage, GameOver):
-                    terminated = True
+            except (NextStage, GameOver):
+                terminated = True
+            except AttributeError:
+                # Engine can crash accessing boss_callback during dialogue transitions
+                break
 
         observation = self._get_obs()
 
