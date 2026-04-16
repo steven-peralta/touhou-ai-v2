@@ -40,3 +40,9 @@ pip install wheel --upgrade
 python lib/touhou/setup.py clean
 cd lib/touhou && cargo clean
 ```
+
+### Example training flags
+
+```
+--train --device cuda --n-steps 2048 --batch-size 256 --n-epochs 4 --learning-rate 1e-4 --ent-coef 0.01 --n-eval-envs 1 --n-eval-episodes 5 --eval-freq 500000 --train-stages 1,2,3,4,5 --eval-stages 6 --total-steps 200000000 --game-res-path /workspace/game -o /workspace/checkpoint
+```
