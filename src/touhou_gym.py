@@ -303,17 +303,17 @@ class TouhouGym(gymnasium.Env):
         if focus: keystate |= FOCUS
         if bomb:  keystate |= BOMB
 
-        if self.disable_render:
-            try:
+        try:
+            if self.disable_render:
                 self.game.run_iter([keystate])
-            except (NextStage, GameOver):
-                terminated = True
-        else:
-            self.window.set_keystate(keystate)
-            try:
+            else:
+                self.window.set_keystate(keystate)
                 self.window.run_frame()
-            except (NextStage, GameOver):
-                terminated = True
+        except (NextStage, GameOver):
+            terminated = True
+        except AttributeError:
+            # Engine can crash on boss_callback when boss is None during transitions
+            terminated = True
 
         # Skip cutscenes/dialogue by fast-forwarding with shoot pressed
         while self.game.msg_wait and not terminated:

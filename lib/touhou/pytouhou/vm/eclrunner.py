@@ -107,6 +107,8 @@ class ECLMainRunner(metaclass=MetaRegistry):
     def resume_ecl(self, sub, instr_type, unk1, unk2):
         boss = self._game.boss
         self._game.msg_wait = False
+        if boss is None:
+            return
         if not boss.boss_callback:
             raise Exception #TODO
         boss.boss_callback.fire()
