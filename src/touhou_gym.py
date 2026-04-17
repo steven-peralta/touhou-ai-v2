@@ -29,7 +29,7 @@ SHOOT = 1
 BOMB = 2
 FOCUS = 4
 
-DIRECTIONS = [0, UP, DOWN, LEFT, RIGHT, UP | LEFT, UP | RIGHT, DOWN | LEFT, DOWN | RIGHT]
+DIRECTIONS = [0, LEFT, RIGHT]
 
 game_data_locations = (pathsep.join(('CM.DAT', 'th06*_CM.DAT', '*CM.DAT', '*cm.dat')),
                        pathsep.join(('ST.DAT', 'th6*ST.DAT', '*ST.DAT', '*st.dat')),
@@ -104,8 +104,8 @@ class TouhouGym(gymnasium.Env):
             )
         })
 
-        # [direction(9), shoot(2), focus(2), bomb(2)]
-        self.action_space = spaces.MultiDiscrete([9, 2, 2, 2])
+        # [direction(3: neutral/left/right), shoot(2), focus(2)]
+        self.action_space = spaces.MultiDiscrete([3, 2, 2])
         self.current_score = 0
         self.last_graze = 0
         self.still_frames = 0
@@ -297,11 +297,10 @@ class TouhouGym(gymnasium.Env):
     def step(self, action):
         terminated = False
 
-        direction, shoot, focus, bomb = action
+        direction, shoot, focus = action
         keystate = DIRECTIONS[direction]
         if shoot: keystate |= SHOOT
         if focus: keystate |= FOCUS
-        if bomb:  keystate |= BOMB
 
         try:
             if self.disable_render:
