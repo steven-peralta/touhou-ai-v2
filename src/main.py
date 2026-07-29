@@ -29,7 +29,7 @@ parser.add_argument('--n-epochs', default=os.getenv('N_EPOCHS', '8'), type=int, 
 parser.add_argument('--n-eval-episodes', default=os.getenv('N_EVAL_EPISODES', '5'), type=int, help='N eval episodes')
 parser.add_argument('--game-res-path', default=os.getenv('GAME_RES_PATH', './res/game/'), type=str, help='Game resource path')
 parser.add_argument('--learning-rate', default=float(os.getenv('LEARNING_RATE', '3e-4')), type=float, help='Learning rate (linearly decayed)')
-parser.add_argument('--ent-coef', default=float(os.getenv('ENT_COEF', '0.0')), type=float, help='Entropy coefficient')
+parser.add_argument('--ent-coef', default=float(os.getenv('ENT_COEF', '0.01')), type=float, help='Entropy coefficient')
 parser.add_argument('--reset-timesteps', action='store_true', help='Reset timestep counter (restarts LR/clip schedule)')
 parser.add_argument('--eval-freq', default=int(os.getenv('EVAL_FREQ', '100000')), type=int, help='Eval frequency in steps')
 

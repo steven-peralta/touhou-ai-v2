@@ -109,6 +109,7 @@ class TouhouGym(gymnasium.Env):
         self.current_score = 0
         self.last_graze = 0
         self.still_frames = 0
+        self.edge_frames = 0
         self.last_px = 0.0
         self.last_py = 0.0
 
@@ -217,6 +218,7 @@ class TouhouGym(gymnasium.Env):
         self.current_score = self.game.players[0].score
         self.last_graze = self.game.players[0].graze
         self.still_frames = 0
+        self.edge_frames = 0
         self.last_px = self.game.players[0].x
         self.last_py = self.game.players[0].y
 
@@ -369,23 +371,36 @@ class TouhouGym(gymnasium.Env):
             danger_score = np.sum(1.0 / (threatening_dists + 1.0))
             reward -= 0.1 * min(danger_score, 5.0)
 
-        # Stillness penalty: penalize staying in the same position for >60 frames
+        # Stillness penalty: escalates the longer the player stays put, so
+        # parking somewhere can't remain a flat, ignorable cost
         moved = abs(px - self.last_px) > 1.0 or abs(py - self.last_py) > 1.0
         if moved:
             self.still_frames = 0
         else:
             self.still_frames += 1
         if self.still_frames > 60:
-            reward -= 0.05
+            reward -= min(0.05 + 0.002 * (self.still_frames - 60), 0.5)
 
-        # Edge penalty: penalize top, left, and right edges (bottom is okay)
+        # Edge penalty: gradient toward top, left, and right edges (bottom is okay),
+        # steepest when pressed flush against the wall
         edge_margin = 32.0
         if py < edge_margin:  # too close to top
-            reward -= 0.02
+            reward -= 0.05 * (1.0 - py / edge_margin)
         if px < edge_margin:  # too close to left
-            reward -= 0.02
-        if px > GAME_WIDTH - edge_margin:  # too close to right
-            reward -= 0.02
+            reward -= 0.05 * (1.0 - px / edge_margin)
+        elif px > GAME_WIDTH - edge_margin:  # too close to right
+            reward -= 0.05 * (1.0 - (GAME_WIDTH - px) / edge_margin)
+
+        # Edge camping escalates: brief visits to the edge are cheap, living there is not.
+        # Jiggling in place near the wall defeats the stillness penalty, so this
+        # counter only resets by actually leaving the edge zone.
+        at_edge = px < edge_margin or px > GAME_WIDTH - edge_margin or py < edge_margin
+        if at_edge:
+            self.edge_frames += 1
+        else:
+            self.edge_frames = 0
+        if self.edge_frames > 60:
+            reward -= min(0.002 * (self.edge_frames - 60), 0.5)
 
         self.last_px = px
         self.last_py = py

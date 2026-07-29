@@ -34,7 +34,7 @@ def train(
         wandb_entity=None,
         game_res_path='./res/game/',
         learning_rate=3e-4,
-        ent_coef=0.0,
+        ent_coef=0.01,
         reset_timesteps=False,
         eval_freq=100_000,
         train_stages=None,
