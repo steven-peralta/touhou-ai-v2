@@ -154,6 +154,15 @@ cdef class Laser(Element):
             offset += 48.
 
 
+    def get_segment(self):
+        length = <double>min(self.end_offset - self.start_offset, self.max_length)
+        offset = self.end_offset - length
+        dx, dy = cos(self.angle), sin(self.angle)
+        return (self.base_pos[0] + offset * dx, self.base_pos[1] + offset * dy,
+                self.base_pos[0] + self.end_offset * dx, self.base_pos[1] + self.end_offset * dy,
+                self.width / 4., <long>self.state)
+
+
     cpdef cancel(self):
         self.grazing_extra_duration = 0
         if self.state != STOPPING:

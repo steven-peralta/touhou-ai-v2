@@ -81,6 +81,10 @@ cdef class Bullet(Element):
             self.sprite.angle = angle
 
 
+    def get_hitbox(self):
+        return (self.hitbox[0], self.hitbox[1])
+
+
     cdef bint is_visible(self, unsigned int screen_width, unsigned int screen_height) nogil:
         tw, th = self.sprite._texcoords[2], self.sprite._texcoords[3]
         x, y = self.x, self.y
