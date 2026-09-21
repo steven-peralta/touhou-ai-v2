@@ -1,3 +1,4 @@
+import math
 import sys
 import logging
 import gc
@@ -19,7 +20,7 @@ from pytouhou.resource.loader import Loader
 from pytouhou.ui.opengl import backend
 from pytouhou.ui.window import Window
 
-from gym_utils import get_entities, get_boss, bullet_intersects_hitbox, closest_point, GAME_WIDTH, GAME_HEIGHT
+from gym_utils import entity_array, closest_entity, bullet_intersects_hitbox, GAME_WIDTH, GAME_HEIGHT
 
 UP = 16
 DOWN = 32
@@ -29,7 +30,27 @@ SHOOT = 1
 BOMB = 2
 FOCUS = 4
 
-DIRECTIONS = [0, LEFT, RIGHT]
+DIRECTIONS = [0, UP, DOWN, LEFT, RIGHT, UP | LEFT, UP | RIGHT, DOWN | LEFT, DOWN | RIGHT]
+
+MAX_BULLETS = 640
+MAX_LASERS = 32
+MAX_ENEMIES = 20
+MAX_ITEMS = 20
+
+BULLET_FEATURES = 9
+LASER_FEATURES = 10
+ENEMY_FEATURES = 3
+ITEM_FEATURES = 4
+
+VELOCITY_SCALE = 8.0
+NEAR_SCALE = 48.0
+HITBOX_SCALE = 32.0
+
+SCORE_REWARD_SCALE = 0.1
+
+BULLET_CANCELLED = 2
+LASER_STARTING = 0
+LASER_STARTED = 1
 
 game_data_locations = (pathsep.join(('CM.DAT', 'th06*_CM.DAT', '*CM.DAT', '*cm.dat')),
                        pathsep.join(('ST.DAT', 'th6*ST.DAT', '*ST.DAT', '*st.dat')),
@@ -48,6 +69,9 @@ class CustomWindow(Window):
     def get_keystate(self):
         return self.keystate
 
+    def get_human_keystate(self):
+        return super().get_keystate()
+
 
 
 class TouhouGym(gymnasium.Env):
@@ -62,6 +86,7 @@ class TouhouGym(gymnasium.Env):
             unlock_fps=True,
             disable_render=False,
             mortal=False,
+            action_repeat=2,
     ):
         self.gl_options = {
             'flavor': 'compatibility',
@@ -77,38 +102,31 @@ class TouhouGym(gymnasium.Env):
         self.fps_limit = fps_limit
         self.unlock_fps = unlock_fps
 
+        self.action_repeat = action_repeat
+
+        def box(*shape):
+            return spaces.Box(low=-1, high=1, shape=shape, dtype=np.float32)
+
         self.observation_space = spaces.Dict({
-            'game_player': spaces.Box(low=-1, high=1,shape=(4,), dtype=np.float32),
+            'game_player': box(4),
             'game_stage': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),
-            'game_boss': spaces.Box(low=-1, high=1,shape=(2,), dtype=np.float32),
-            'game_closest_bullet': spaces.Box(low=-1, high=1,shape=(4,), dtype=np.float32),
-            'game_closest_item': spaces.Box(low=-1, high=1,shape=(4,), dtype=np.float32),
-            'game_closest_enemy': spaces.Box(low=-1, high=1,shape=(4,), dtype=np.float32),
-            'pife_game_bullets': spaces.Box(
-                low=-1,
-                high=1,
-                shape=(640, 5),
-                dtype=np.float32
-            ),
-            'pife_game_enemies': spaces.Box(
-                low=-1,
-                high=1,
-                shape=(20, 3),
-                dtype=np.float32
-            ),
-            'pife_game_items': spaces.Box(
-                low=-1,
-                high=1,
-                shape=(20, 3),
-                dtype=np.float32
-            )
+            'game_boss': box(3),
+            'game_closest_bullet': box(BULLET_FEATURES),
+            'game_closest_item': box(ITEM_FEATURES),
+            'game_closest_enemy': box(ENEMY_FEATURES),
+            'pife_game_bullets': box(MAX_BULLETS, BULLET_FEATURES),
+            'pife_game_lasers': box(MAX_LASERS, LASER_FEATURES),
+            'pife_game_enemies': box(MAX_ENEMIES, ENEMY_FEATURES),
+            'pife_game_items': box(MAX_ITEMS, ITEM_FEATURES),
         })
 
-        # [direction(3: neutral/left/right), shoot(2), focus(2)]
-        self.action_space = spaces.MultiDiscrete([3, 2, 2])
+        # [direction(9: neutral/up/down/left/right/diagonals), shoot(2), focus(2)]
+        self.action_space = spaces.MultiDiscrete([len(DIRECTIONS), 2, 2])
         self.current_score = 0
         self.last_graze = 0
         self.still_frames = 0
+        self.episode_hits = 0
+        self.episode_frames = 0
         self.last_px = 0.0
         self.last_py = 0.0
 
@@ -135,6 +153,7 @@ class TouhouGym(gymnasium.Env):
         self.window = None
 
         self.starting_lives = 0
+        self.quit_requested = False
 
         self._start()
 
@@ -217,51 +236,53 @@ class TouhouGym(gymnasium.Env):
         self.current_score = self.game.players[0].score
         self.last_graze = self.game.players[0].graze
         self.still_frames = 0
+        self.episode_hits = 0
+        self.episode_frames = 0
         self.last_px = self.game.players[0].x
         self.last_py = self.game.players[0].y
 
+    def _live_bullets(self):
+        return [b for b in self.game.bullets if b.state != BULLET_CANCELLED][:MAX_BULLETS]
+
     def _get_obs(self):
-        px, py = self.game.players[0].x, self.game.players[0].y
-        h = self.game.players[0].sht.hitbox
+        player = self.game.players[0]
+        px, py = player.x, player.y
+        h = player.sht.hitbox
         player_np = np.array(
             [(px + h) / GAME_WIDTH, (px - h) / GAME_WIDTH,
              (py + h) / GAME_HEIGHT, (py - h) / GAME_HEIGHT],
             dtype=np.float32)
 
-        def fill_array(entities, shape, transform_fn):
-            arr = np.full(shape, -1, dtype=np.float32)
-            valid = [(i, e) for i, e in enumerate(entities) if e]
-            if valid:
-                idxs, ents = zip(*valid)
-                arr[list(idxs)] = np.array([transform_fn(e) for e in ents], dtype=np.float32)
-            return arr
+        def rel(x, y):
+            return (x - px) / GAME_WIDTH, (y - py) / GAME_HEIGHT
 
-        bullets_np = fill_array(
-            get_entities(self.game.bullets, m=640), (640, 5),
-            lambda b: (b.x / GAME_WIDTH, b.y / GAME_HEIGHT,
-                       b.dx / GAME_WIDTH, b.dy / GAME_HEIGHT,
-                       b._bullet_type.type_id / 9.0)
-        )
+        def near(x, y):
+            return (x - px) / NEAR_SCALE, (y - py) / NEAR_SCALE
 
-        enemies_np = fill_array(
-            get_entities(self.game.enemies, m=20), (20, 3),
-            lambda e: (e.x / GAME_WIDTH, e.y / GAME_HEIGHT,
-                       (e._type & 0xFF) / 255.0)
-        )
+        def bullet_row(b):
+            hw, hh = b.get_hitbox()
+            return (1.0, *rel(b.x, b.y), *near(b.x, b.y), b.dx / VELOCITY_SCALE, b.dy / VELOCITY_SCALE,
+                    hw / HITBOX_SCALE, hh / HITBOX_SCALE)
 
-        items_np = fill_array(
-            get_entities(self.game.items, m=20), (20, 3),
-            lambda i: (i.x / GAME_WIDTH, i.y / GAME_HEIGHT,
-                       i._type / 6.0)
-        )
+        def laser_row(laser):
+            x0, y0, x1, y1, half_width, state = laser.get_segment()
+            sx, sy = x1 - x0, y1 - y0
+            length_sq = sx * sx + sy * sy
+            t = 0.0 if length_sq == 0 else min(1.0, max(0.0, ((px - x0) * sx + (py - y0) * sy) / length_sq))
+            nx, ny = x0 + t * sx, y0 + t * sy
+            return (1.0, *rel(nx, ny), *near(nx, ny), math.cos(laser.angle), math.sin(laser.angle),
+                    half_width / HITBOX_SCALE, float(state == LASER_STARTED), float(state == LASER_STARTING))
 
-        boss_np = np.asarray(get_boss(self.game.boss), dtype=np.float32)
+        bullets_np = entity_array(self._live_bullets(), MAX_BULLETS, BULLET_FEATURES, bullet_row)
+        lasers_np = entity_array(self.game.lasers, MAX_LASERS, LASER_FEATURES, laser_row)
+        enemies_np = entity_array(self.game.enemies, MAX_ENEMIES, ENEMY_FEATURES,
+                                  lambda e: (1.0, *rel(e.x, e.y)))
+        items_np = entity_array(self.game.items, MAX_ITEMS, ITEM_FEATURES,
+                                lambda i: (1.0, *rel(i.x, i.y), i._type / 6.0))
 
-        # Use normalized player coords to match normalized entity arrays
-        norm_px, norm_py = px / GAME_WIDTH, py / GAME_HEIGHT
-        closest_bullet = closest_point(bullets_np, (norm_px, norm_py))
-        closest_item = closest_point(items_np, (norm_px, norm_py))
-        closest_enemy = closest_point(enemies_np, (norm_px, norm_py))
+        boss = self.game.boss
+        boss_np = np.array((1.0, *rel(boss.x, boss.y)) if boss else (0.0, 0.0, 0.0), dtype=np.float32)
+        boss_np = np.clip(boss_np, -1, 1)
 
         stage_np = np.array([self.stage_num / 6.0], dtype=np.float32)
 
@@ -269,10 +290,11 @@ class TouhouGym(gymnasium.Env):
             'game_player': player_np,
             'game_stage': stage_np,
             'game_boss': boss_np,
-            'game_closest_bullet': closest_bullet,
-            'game_closest_item': closest_item,
-            'game_closest_enemy': closest_enemy,
+            'game_closest_bullet': closest_entity(bullets_np),
+            'game_closest_item': closest_entity(items_np),
+            'game_closest_enemy': closest_entity(enemies_np),
             'pife_game_bullets': bullets_np,
+            'pife_game_lasers': lasers_np,
             'pife_game_enemies': enemies_np,
             'pife_game_items': items_np
         }
@@ -287,76 +309,56 @@ class TouhouGym(gymnasium.Env):
         return observation, {}
 
     def _get_raw_bullet_array(self):
-        raw_bullets = get_entities(self.game.bullets, m=640)
-        bullet_array = np.full((640, 4), -1, dtype=np.float32)
-        for i, b in enumerate(raw_bullets):
-            if b:
-                bullet_array[i] = (b.x, b.y, b.dx, b.dy)
+        bullets = self._live_bullets()
+        bullet_array = np.full((MAX_BULLETS, 4), -1, dtype=np.float32)
+        if bullets:
+            bullet_array[:len(bullets)] = [(b.x, b.y, b.dx, b.dy) for b in bullets]
         return bullet_array
 
-    def step(self, action):
-        terminated = False
+    def _stage_cleared(self):
+        script_finished = all(runner.instruction_pointer >= len(runner._main) for runner in self.game.ecl_runners)
+        return script_finished and not self.game.boss and not self.game.enemies
 
-        direction, shoot, focus = action
-        keystate = DIRECTIONS[direction]
-        if shoot: keystate |= SHOOT
-        if focus: keystate |= FOCUS
-
+    def _run_frame(self, keystate):
         try:
             if self.disable_render:
                 self.game.run_iter([keystate])
             else:
                 self.window.set_keystate(keystate)
-                self.window.run_frame()
-        except (NextStage, GameOver):
-            terminated = True
-        except AttributeError:
-            # Engine can crash on boss_callback when boss is None during transitions
-            terminated = True
+                if not self.window.run_frame():
+                    self.quit_requested = True
+        except NextStage:
+            return True, True
+        except GameOver:
+            return True, False
+        return False, False
 
-        # Skip cutscenes/dialogue by fast-forwarding with shoot pressed
-        while self.game.msg_wait and not terminated:
-            try:
-                if self.disable_render:
-                    self.game.run_iter([SHOOT])
-                else:
-                    self.window.set_keystate(SHOOT)
-                    self.window.run_frame()
-            except (NextStage, GameOver):
-                terminated = True
-            except AttributeError:
-                # Engine can crash accessing boss_callback during dialogue transitions
-                break
-
-        observation = self._get_obs()
+    def _frame_reward(self):
+        terminated = False
+        player = self.game.players[0]
 
         # Detect hit via lives dropping
         expected_lives = 0 if self.mortal else 9999
-        was_hit = self.game.players[0].lives < expected_lives
-        self.game.players[0].lives = expected_lives
+        was_hit = player.lives < expected_lives
+        player.lives = expected_lives
 
         # Normalized score delta as base reward, with graze contribution removed
-        score_delta = self.game.players[0].score - self.current_score
-        graze_delta = self.game.players[0].graze - self.last_graze
-        self.current_score = self.game.players[0].score
-        self.last_graze = self.game.players[0].graze
+        score_delta = player.score - self.current_score
+        graze_delta = player.graze - self.last_graze
+        self.current_score = player.score
+        self.last_graze = player.graze
 
         real_score_delta = score_delta - (graze_delta * 500)
-        reward = real_score_delta / 1000.0
+        reward = SCORE_REWARD_SCALE * math.log1p(max(real_score_delta, 0) / 1000.0)
 
         # Gradient bullet danger
-        bullet_array = self._get_raw_bullet_array()
-        valid_hits, dists = bullet_intersects_hitbox(
-            self.game.players[0].x,
-            self.game.players[0].y,
-            self.game.players[0].sht.hitbox,
-            bullet_array
-        )
+        valid_hits, dists = bullet_intersects_hitbox(player.x, player.y, player.sht.hitbox, self._get_raw_bullet_array())
 
-        px, py = self.game.players[0].x, self.game.players[0].y
+        px, py = player.x, player.y
 
         # Hit handling: mortal mode terminates, invincible mode penalizes
         if was_hit:
+            self.episode_hits += 1
             if self.mortal:
                 reward -= 5.0
                 terminated = True
@@ -390,9 +392,62 @@ class TouhouGym(gymnasium.Env):
         self.last_px = px
         self.last_py = py
 
-        return observation, reward, terminated, False, {}
+        return reward, terminated
 
+    def step(self, action):
+        direction, shoot, focus = action
+        keystate = DIRECTIONS[direction]
+        if shoot: keystate |= SHOOT
+        if focus: keystate |= FOCUS
 
+        reward = 0.0
+        terminated = False
+        cleared = False
+
+        for _ in range(self.action_repeat):
+            try:
+                terminated, cleared = self._run_frame(keystate)
+            except AttributeError:
+                # Engine can crash on boss_callback when boss is None during transitions
+                terminated = True
+
+            # Skip cutscenes/dialogue by fast-forwarding with shoot pressed
+            while self.game.msg_wait and not terminated:
+                try:
+                    terminated, cleared = self._run_frame(SHOOT)
+                except AttributeError:
+                    # Engine can crash accessing boss_callback during dialogue transitions
+                    break
+
+            if not terminated and self._stage_cleared():
+                terminated = True
+                cleared = True
+
+            self.episode_frames += 1
+            frame_reward, died = self._frame_reward()
+            reward += frame_reward
+            terminated = terminated or died
+            if terminated or self.quit_requested:
+                break
+
+        info = {
+            'quit': self.quit_requested,
+            'hits': self.episode_hits,
+            'score': self.game.players[0].score,
+            'cleared': int(cleared),
+            'frames': self.episode_frames,
+        }
+
+        return self._get_obs(), reward, terminated, False, info
+
+    def human_action(self):
+        keystate = self.window.get_human_keystate()
+        direction = 0
+        if bool(keystate & UP) != bool(keystate & DOWN):
+            direction |= keystate & (UP | DOWN)
+        if bool(keystate & LEFT) != bool(keystate & RIGHT):
+            direction |= keystate & (LEFT | RIGHT)
+        return np.array([DIRECTIONS.index(direction), int(bool(keystate & SHOOT)), int(bool(keystate & FOCUS))], dtype=np.int64)
 
     def close(self):
         if self.window is not None:

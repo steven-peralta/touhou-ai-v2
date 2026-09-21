@@ -3,27 +3,19 @@ import numpy as np
 GAME_WIDTH = 384
 GAME_HEIGHT = 448
 
-def closest_point(points, point):
-    if points.size == 0:
-        return np.array([-1, -1, 0, 0], dtype=np.float32)
+def entity_array(entities, max_entities, n_features, row_fn):
+    arr = np.zeros((max_entities, n_features), dtype=np.float32)
+    rows = [row_fn(e) for e in entities[:max_entities] if e]
+    if rows:
+        arr[:len(rows)] = np.clip(np.array(rows, dtype=np.float32), -1, 1)
+    return arr
 
-    # Mask out padded -1 entries
-    mask = points[:, 0] != -1
-    if not np.any(mask):
-        return np.array([-1, -1, 0, 0], dtype=np.float32)
-
-    valid_points = points[mask]
-    px, py = point
-    dx = valid_points[:, 0] - px
-    dy = valid_points[:, 1] - py
-    distances = np.sqrt(dx**2 + dy**2)
-    idx = np.argmin(distances)
-
-    closest = valid_points[idx]
-    if points.shape[1] >= 4:
-        return np.array([closest[0], closest[1], closest[2], closest[3]], dtype=np.float32)
-    else:
-        return np.array([closest[0], closest[1], 0, 0], dtype=np.float32)
+def closest_entity(entities):
+    present = entities[:, 0] > 0
+    if not np.any(present):
+        return np.zeros(entities.shape[1], dtype=np.float32)
+    valid = entities[present]
+    return valid[np.argmin(valid[:, 1] ** 2 + valid[:, 2] ** 2)]
 
 def item_intersects_hitbox(player_x, player_y, hitbox, item_x, item_y, max_distance=448):
     x1, x2 = player_x - hitbox, player_x + hitbox
@@ -70,15 +62,6 @@ def bullet_intersects_hitbox(player_x, player_y, hitbox, bullet_data, max_distan
 
     return valid, dists
 
-def get_entities(entities, m=100):
-    return entities[:m] + [None] * max(0, m - len(entities))
-
 def get_onscreen_entities(entities, m=100):
     visible = [e for e in entities if e and 0 <= e.x <= GAME_WIDTH and 0 <= e.y <= GAME_HEIGHT]
     return visible[:m] + [None] * max(0, m - len(visible))
-
-def get_boss(boss):
-    if boss:
-        return boss.x / GAME_WIDTH, boss.y / GAME_HEIGHT
-    else:
-        return -1, -1
