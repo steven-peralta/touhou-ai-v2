@@ -3,6 +3,8 @@ from datetime import datetime
 
 from PIFE import PIFEFeatureExtractor, CombinedPIFEFeatureExtractor
 from touhou_gym import TouhouGym
+from pretrain import pretrain
+from callbacks import EPISODE_METRICS, EpisodeMetricsCallback, MetricsEvalCallback
 
 import wandb
 from wandb.integration.sb3 import WandbCallback
@@ -40,6 +42,11 @@ def train(
         train_stages=None,
         eval_stages=None,
         render_train=False,
+        action_repeat=2,
+        pretrain_demos=None,
+        pretrain_epochs=10,
+        pretrain_batch_size=256,
+        pretrain_learning_rate=3e-4,
 ):
     run_name = datetime.now().strftime("touhou-%Y-%m-%d_%H-%M-%S")
 
@@ -63,19 +70,19 @@ def train(
     eval_freq = max(eval_freq // n_envs, 1)
 
     # training envs
-    env = SubprocVecEnv([lambda: TouhouGym(disable_render=not render_train, stage_num=stage_num, random_stage=random_stage, stages=train_stages, game_path=game_res_path) for _ in range(n_envs)], start_method='spawn')
+    env = SubprocVecEnv([lambda: TouhouGym(disable_render=not render_train, stage_num=stage_num, random_stage=random_stage, stages=train_stages, game_path=game_res_path, action_repeat=action_repeat) for _ in range(n_envs)], start_method='spawn')
     env = VecFrameStack(env, n_stack=frame_stack_size)
-    env = VecMonitor(env)
+    env = VecMonitor(env, info_keywords=EPISODE_METRICS)
 
     # eval env — render only if a display is available
     has_display = os.environ.get('DISPLAY') is not None
     eval_stages_list = eval_stages or train_stages
-    eval_env = SubprocVecEnv([lambda: TouhouGym(disable_render=not has_display, stage_num=stage_num, random_stage=random_stage, stages=eval_stages_list, fps_limit=60, unlock_fps=False, game_path=game_res_path, mortal=True) for _ in range(n_eval_envs)], start_method='spawn')
+    eval_env = SubprocVecEnv([lambda: TouhouGym(disable_render=not has_display, stage_num=stage_num, random_stage=random_stage, stages=eval_stages_list, fps_limit=60, unlock_fps=False, game_path=game_res_path, action_repeat=action_repeat, mortal=True) for _ in range(n_eval_envs)], start_method='spawn')
     eval_env = VecFrameStack(eval_env, n_stack=frame_stack_size)
     eval_env = VecMonitor(eval_env)
 
     # callbacks
-    eval_callback = EvalCallback(
+    eval_callback = MetricsEvalCallback(
         eval_env,
         best_model_save_path=best_path,
         log_path=logs_path,
@@ -100,8 +107,18 @@ def train(
     )
 
     if load_from_checkpoint:
-        model = PPO.load(load_from_checkpoint, env, device=device,
-                         tensorboard_log=logs_path)
+        model = PPO.load(
+            load_from_checkpoint,
+            env,
+            device=device,
+            tensorboard_log=logs_path,
+            n_steps=n_steps,
+            batch_size=batch_size,
+            n_epochs=n_epochs,
+            learning_rate=lr_schedule,
+            clip_range=clip_range,
+            ent_coef=ent_coef,
+        )
     else:
         model = PPO(
             "MultiInputPolicy",
@@ -118,12 +135,27 @@ def train(
             policy_kwargs=policy_kwargs,
         )
 
+    if pretrain_demos:
+        metrics = pretrain(
+            model,
+            demo_dir=pretrain_demos,
+            frame_stack_size=frame_stack_size,
+            action_repeat=action_repeat,
+            epochs=pretrain_epochs,
+            batch_size=pretrain_batch_size,
+            learning_rate=pretrain_learning_rate,
+        )
+        run.summary.update(metrics)
+        pretrained_path = os.path.join(save_base_path, f'pretrained/{run_name}')
+        model.save(pretrained_path)
+        print(f"Saved pretrained model to {pretrained_path}.zip")
+
     try:
         model.learn(
             total_timesteps=total_steps,
             reset_num_timesteps=reset_timesteps,
             progress_bar=True,
-            callback=[checkpoint_callback, eval_callback, wandb_callback],
+            callback=[checkpoint_callback, eval_callback, wandb_callback, EpisodeMetricsCallback()],
             tb_log_name=run_name
         )
     except Exception as e:

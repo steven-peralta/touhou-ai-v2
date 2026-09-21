@@ -25,4 +25,5 @@ res/**
 .idea/
 wandb/
 train/
+demos/
 **/__pycache__
