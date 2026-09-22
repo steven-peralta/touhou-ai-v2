@@ -315,9 +315,19 @@ class TouhouGym(gymnasium.Env):
             bullet_array[:len(bullets)] = [(b.x, b.y, b.dx, b.dy) for b in bullets]
         return bullet_array
 
+    def _script_finished(self):
+        return all(runner.instruction_pointer >= len(runner._main) for runner in self.game.ecl_runners)
+
+    def _resume_stalled_boss(self):
+        boss = self.game.boss
+        if boss is None or boss.damageable or boss.life != 1 or boss.timeout != -1:
+            return
+        if boss.boss_callback and self._script_finished():
+            self.game.msg_wait = False
+            boss.boss_callback.fire()
+
     def _stage_cleared(self):
-        script_finished = all(runner.instruction_pointer >= len(runner._main) for runner in self.game.ecl_runners)
-        return script_finished and not self.game.boss and not self.game.enemies
+        return self._script_finished() and not self.game.boss and not self.game.enemies
 
     def _run_frame(self, keystate):
         try:
@@ -418,6 +428,9 @@ class TouhouGym(gymnasium.Env):
                 except AttributeError:
                     # Engine can crash accessing boss_callback during dialogue transitions
                     break
+
+            if not terminated:
+                self._resume_stalled_boss()
 
             if not terminated and self._stage_cleared():
                 terminated = True
