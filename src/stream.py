@@ -23,14 +23,14 @@ FONT_CANDIDATES = (
 
 METRIC_LABELS = (
     ('time/total_timesteps', 'steps'),
-    ('rollout/ep_hits_mean', 'train hits/stage'),
+    ('rollout/ep_hits_mean', 'train hits'),
     ('rollout/ep_rew_mean', 'train reward'),
-    ('rollout/ep_frames_mean', 'train frames/stage'),
+    ('rollout/ep_frames_mean', 'train frames'),
     ('time/fps', 'fps'),
 )
 
 EVAL_DELTA_LABELS = (
-    ('eval/mean_ep_frames', 'eval frames to hit', True),
+    ('eval/mean_ep_frames', 'frames to 1st hit', True),
     ('eval/mean_ep_hits', 'eval hits', False),
     ('eval/mean_ep_cleared', 'eval clear rate', True),
     ('eval/mean_reward', 'eval reward', True),
@@ -169,19 +169,19 @@ class TwitchStream:
         latest = history[-1] if history else {}
         previous = history[-2] if len(history) > 1 else {}
         draw.text((x, y), 'latest eval vs previous', font=self.small_font, fill=(200, 200, 220))
-        y += 20
+        y += 18
         for key, label, higher_is_better in EVAL_DELTA_LABELS:
             value = latest.get(key)
             delta = value - previous[key] if value is not None and key in previous else None
             draw.text((x, y), label, font=self.small_font, fill=(150, 150, 170))
-            draw.text((x, y + 16), format_value(value), font=self.font, fill=(240, 240, 240))
-            draw.text((x + 150, y + 16), format_delta(delta), font=self.font, fill=delta_color(delta, higher_is_better))
-            y += 34
-        y += 6
+            draw.text((x + 160, y), format_value(value), font=self.font, fill=(240, 240, 240))
+            draw.text((x + 232, y), format_delta(delta), font=self.font, fill=delta_color(delta, higher_is_better))
+            y += 26
+        y += 8
         for key, label in METRIC_LABELS:
             draw.text((x, y), label, font=self.small_font, fill=(150, 150, 170))
-            draw.text((x, y + 16), format_value(metrics.get(key)), font=self.font, fill=(240, 240, 240))
-            y += 34
+            draw.text((x + 160, y), format_value(metrics.get(key)), font=self.font, fill=(240, 240, 240))
+            y += 26
         return np.asarray(canvas)
 
     def _pump(self):
