@@ -26,13 +26,14 @@ METRIC_LABELS = (
     ('rollout/ep_hits_mean', 'train hits/stage'),
     ('rollout/ep_rew_mean', 'train reward'),
     ('rollout/ep_frames_mean', 'train frames/stage'),
-    ('eval/mean_ep_frames', 'eval frames to hit'),
-    ('eval/mean_ep_hits', 'eval hits'),
-    ('eval/mean_ep_cleared', 'eval clear rate'),
-    ('train/entropy_loss', 'entropy'),
-    ('train/explained_variance', 'explained var'),
-    ('train/clip_fraction', 'clip fraction'),
     ('time/fps', 'fps'),
+)
+
+EVAL_DELTA_LABELS = (
+    ('eval/mean_ep_frames', 'eval frames to hit', True),
+    ('eval/mean_ep_hits', 'eval hits', False),
+    ('eval/mean_ep_cleared', 'eval clear rate', True),
+    ('eval/mean_reward', 'eval reward', True),
 )
 
 
@@ -53,12 +54,29 @@ def format_value(value):
     return f'{value:.3g}'
 
 
+def format_delta(delta):
+    if delta is None:
+        return ''
+    sign = '+' if delta > 0 else ''
+    if abs(delta) >= 100:
+        return f'{sign}{delta:.0f}'
+    return f'{sign}{delta:.2g}'
+
+
+def delta_color(delta, higher_is_better):
+    if delta is None or delta == 0:
+        return (150, 150, 170)
+    improving = (delta > 0) == higher_is_better
+    return (120, 220, 140) if improving else (240, 110, 110)
+
+
 class TwitchStream:
     def __init__(self, stream_key, title='touhou-ai', bitrate='2500k'):
         self.title = title
         self.font = load_font(18)
         self.small_font = load_font(14)
         self.metrics = {}
+        self.eval_history = []
         self.status = 'starting'
         self.phase = 'starting'
         self.progress = None
@@ -85,6 +103,11 @@ class TwitchStream:
     def set_status(self, status):
         with self.lock:
             self.status = status
+
+    def record_eval(self, metrics):
+        with self.lock:
+            self.eval_history.append(dict(metrics))
+            self.eval_history = self.eval_history[-2:]
 
     def set_phase(self, phase):
         with self.lock:
@@ -117,6 +140,7 @@ class TwitchStream:
             phase = self.phase
             progress = self.progress
             eta = self._eta()
+            history = list(self.eval_history)
         canvas = Image.new('RGB', (FRAME_WIDTH, GAME_HEIGHT), (16, 16, 24))
         canvas.paste(Image.fromarray(game), (0, 0))
         draw = ImageDraw.Draw(canvas)
@@ -142,6 +166,18 @@ class TwitchStream:
             y += 8
         pulse = 0.6 + 0.4 * abs(math.sin(time.time() * 2))
         draw.ellipse((x + 276, 40, x + 288, 52), fill=(int(255 * pulse), int(80 * pulse), int(80 * pulse)))
+        latest = history[-1] if history else {}
+        previous = history[-2] if len(history) > 1 else {}
+        draw.text((x, y), 'latest eval vs previous', font=self.small_font, fill=(200, 200, 220))
+        y += 20
+        for key, label, higher_is_better in EVAL_DELTA_LABELS:
+            value = latest.get(key)
+            delta = value - previous[key] if value is not None and key in previous else None
+            draw.text((x, y), label, font=self.small_font, fill=(150, 150, 170))
+            draw.text((x, y + 16), format_value(value), font=self.font, fill=(240, 240, 240))
+            draw.text((x + 150, y + 16), format_delta(delta), font=self.font, fill=delta_color(delta, higher_is_better))
+            y += 34
+        y += 6
         for key, label in METRIC_LABELS:
             draw.text((x, y), label, font=self.small_font, fill=(150, 150, 170))
             draw.text((x, y + 16), format_value(metrics.get(key)), font=self.font, fill=(240, 240, 240))

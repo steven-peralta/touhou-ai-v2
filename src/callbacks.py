@@ -102,4 +102,7 @@ class MetricsEvalCallback(EvalCallback):
             if self.stream is not None:
                 self.stream.set_phase(f'evaluating on stage {self._eval_stage()}')
                 self.stream.set_status(f'eval at {self.model.num_timesteps:,} steps')
-        return super()._on_step()
+        continue_training = super()._on_step()
+        if self.stream is not None and self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
+            self.stream.record_eval({k: v for k, v in self.stream.metrics.items() if k.startswith('eval/')})
+        return continue_training
