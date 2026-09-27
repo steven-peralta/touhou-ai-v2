@@ -1,11 +1,11 @@
 import argparse
 import multiprocessing
 import os
-import subprocess
 from pyvirtualdisplay import Display
 
 from eval import eval_model
 from record import record
+from video import record_video
 from train import train
 
 parser = argparse.ArgumentParser(description='Touhou AI')
@@ -22,7 +22,7 @@ parser.add_argument('--random-stage', action='store_true', help='Random stage')
 parser.add_argument('--train-stages', default=None, type=str, help='Comma-separated list of training stages (e.g. 1,2,3,4,5)')
 parser.add_argument('--eval-stages', default=None, type=str, help='Comma-separated list of eval stages (e.g. 6)')
 parser.add_argument('-d', '--device', default=os.getenv('DEVICE', 'cuda'), type=str, help='Device')
-parser.add_argument('--stream', action='store_true', help='stream')
+parser.add_argument('--stream', action='store_true', help='Stream the eval env with live metrics to Twitch (needs STREAM_KEY)')
 parser.add_argument('--headless', action='store_true', help='Headless')
 parser.add_argument('--render-train', action='store_true', help='Enable rendering on training envs')
 parser.add_argument('--n-steps', default=os.getenv('N_STEPS', '2048'), type=int, help='N steps')
@@ -41,32 +41,10 @@ parser.add_argument('--pretrain-demos', default=os.getenv('PRETRAIN_DEMOS'), typ
 parser.add_argument('--pretrain-epochs', default=int(os.getenv('PRETRAIN_EPOCHS', '10')), type=int, help='Behavior cloning epochs')
 parser.add_argument('--pretrain-batch-size', default=int(os.getenv('PRETRAIN_BATCH_SIZE', '256')), type=int, help='Behavior cloning batch size')
 parser.add_argument('--pretrain-learning-rate', default=float(os.getenv('PRETRAIN_LEARNING_RATE', '3e-4')), type=float, help='Behavior cloning learning rate')
+parser.add_argument('--record-video', default=None, type=str, help='Record one episode of the loaded model to this mp4 path')
 parser.add_argument('--eval-freq', default=int(os.getenv('EVAL_FREQ', '100000')), type=int, help='Eval frequency in steps')
 
 stream_key = os.getenv('STREAM_KEY')
-
-def start_ffmpeg():
-  subprocess.run([
-      'ffmpeg',
-      '-hide_banner',
-      '-loglevel', 'error',
-      '-r', '30',
-      '-f', 'x11grab',
-      '-s', '640x480',
-      '-i', os.environ["DISPLAY"],
-      '-c:v', 'libx264',
-      '-g', '90',
-      '-vf', 'format=yuv420p',
-      '-profile:v', 'main',
-      '-x264-params', 'nal-hrd=cbr',
-      '-preset', 'veryfast',
-      '-b:v', '3000k',
-      '-minrate', '3000k',
-      '-maxrate', '3000k',
-      '-bufsize', '6000k',
-      '-f', 'flv',
-      f'rtmp://slc.contribute.live-video.net/app/{stream_key}'])
-
 
 def main():
     args = parser.parse_args()
@@ -99,15 +77,23 @@ def main():
         display = Display()
         display.start()
 
-    if stream:
-        if not stream_key:
-            print("stream key is required")
+    if stream and not stream_key:
+        print("STREAM_KEY is required for --stream")
+        exit(1)
+
+    if args.record_video:
+        if not load_model:
+            print("--load is required for --record-video")
             exit(1)
-
-        process = multiprocessing.Process(target=start_ffmpeg)
-        process.start()
-
-    if args.record:
+        record_video(
+            output_path=args.record_video,
+            load_from_checkpoint=load_model,
+            stage_num=stage,
+            game_res_path=game_res_path,
+            action_repeat=args.action_repeat,
+            device=device,
+        )
+    elif args.record:
         record(
             output_dir=args.record_dir,
             n_episodes=args.record_episodes,
@@ -146,6 +132,7 @@ def main():
             pretrain_epochs=args.pretrain_epochs,
             pretrain_batch_size=args.pretrain_batch_size,
             pretrain_learning_rate=args.pretrain_learning_rate,
+            stream_key=stream_key if stream else None,
         )
     else:
         eval_model(

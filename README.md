@@ -82,3 +82,18 @@ docker run --gpus all -v /path/to/workspace:/workspace -e WANDB_API_KEY=... k9ro
 ```
 
 `--game-res-path` and `-o` default to the paths above inside the container.
+
+### Streaming to Twitch
+
+Add `--stream` to a training command and set `STREAM_KEY` to your Twitch stream key. The eval env is rendered to the stream with a metrics panel beside it (training hits per stage, eval survival, entropy and so on); between evals the panel shows how many steps remain until the next one. Streaming needs a display, so pass `--headless` in Docker:
+
+```
+docker run --gpus all -v /path/to/workspace:/workspace -e WANDB_API_KEY=... -e STREAM_KEY=... k9rosie/touhou-ai:latest \
+  --train --headless --stream --device cuda ...
+```
+
+### Recording a video
+
+```
+python src/main.py --record-video out.mp4 --load train/best/<run>/best_model.zip --stage 6
+```

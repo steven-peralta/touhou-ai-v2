@@ -5,6 +5,7 @@ from PIFE import PIFEFeatureExtractor, CombinedPIFEFeatureExtractor
 from touhou_gym import TouhouGym
 from pretrain import pretrain
 from callbacks import EPISODE_METRICS, EpisodeMetricsCallback, MetricsEvalCallback
+from stream import TwitchStream
 
 import wandb
 from wandb.integration.sb3 import WandbCallback
@@ -47,6 +48,7 @@ def train(
         pretrain_epochs=10,
         pretrain_batch_size=256,
         pretrain_learning_rate=3e-4,
+        stream_key=None,
 ):
     run_name = datetime.now().strftime("touhou-%Y-%m-%d_%H-%M-%S")
 
@@ -76,6 +78,9 @@ def train(
 
     # eval env — render only if a display is available
     has_display = os.environ.get('DISPLAY') is not None
+    stream = TwitchStream(stream_key, title=run_name) if stream_key else None
+    if stream is not None and not has_display:
+        raise ValueError("Streaming needs a display for the eval env; pass --headless or set DISPLAY")
     eval_stages_list = eval_stages or train_stages
     eval_env = SubprocVecEnv([lambda: TouhouGym(disable_render=not has_display, stage_num=stage_num, random_stage=random_stage, stages=eval_stages_list, fps_limit=60, unlock_fps=False, game_path=game_res_path, action_repeat=action_repeat, mortal=True) for _ in range(n_eval_envs)], start_method='spawn')
     eval_env = VecFrameStack(eval_env, n_stack=frame_stack_size)
@@ -84,6 +89,7 @@ def train(
     # callbacks
     eval_callback = MetricsEvalCallback(
         eval_env,
+        stream=stream,
         best_model_save_path=best_path,
         log_path=logs_path,
         eval_freq=eval_freq,
@@ -152,12 +158,15 @@ def train(
         model.save(pretrained_path)
         print(f"Saved pretrained model to {pretrained_path}.zip")
 
+    metrics_callback = EpisodeMetricsCallback(stream=stream)
+    metrics_callback.eval_callback = eval_callback
+
     try:
         model.learn(
             total_timesteps=total_steps,
             reset_num_timesteps=reset_timesteps,
             progress_bar=True,
-            callback=[checkpoint_callback, eval_callback, wandb_callback, EpisodeMetricsCallback()],
+            callback=[checkpoint_callback, eval_callback, wandb_callback, metrics_callback],
             tb_log_name=run_name
         )
     except Exception as e:
@@ -165,4 +174,6 @@ def train(
         run.alert(title="Run crashed", text=f"Run crashed with this error: {e}")
         raise
     finally:
+        if stream is not None:
+            stream.close()
         run.finish()

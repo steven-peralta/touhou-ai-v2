@@ -6,7 +6,7 @@ WORKDIR /project
 
 RUN apt-get update -y &&  \
     apt-get upgrade -y && \
-    apt-get install -y curl xvfb python3-opengl ffmpeg build-essential git python3-virtualenv libepoxy-dev libglfw3-dev libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev libsdl2-mixer-dev && \
+    apt-get install -y curl xvfb python3-opengl ffmpeg fonts-dejavu-core build-essential git python3-virtualenv libepoxy-dev libglfw3-dev libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev libsdl2-mixer-dev && \
     curl https://sh.rustup.rs -sSf | bash -s -- -y && \
     virtualenv .venv && \
     export VIRTUAL_ENV=/project/.venv && \
