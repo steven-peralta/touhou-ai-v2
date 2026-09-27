@@ -1,3 +1,4 @@
+import math
 import os
 import subprocess
 import threading
@@ -58,7 +59,10 @@ class TwitchStream:
         self.font = load_font(18)
         self.small_font = load_font(14)
         self.metrics = {}
-        self.status = 'waiting for eval'
+        self.status = 'starting'
+        self.phase = 'starting'
+        self.progress = None
+        self.rate_samples = []
         self.lock = threading.Lock()
         self.latest_game_frame = np.zeros((GAME_HEIGHT, GAME_WIDTH, 3), dtype=np.uint8)
         self.process = subprocess.Popen([
@@ -82,6 +86,25 @@ class TwitchStream:
         with self.lock:
             self.status = status
 
+    def set_phase(self, phase):
+        with self.lock:
+            self.phase = phase
+
+    def set_progress(self, timesteps, steps_to_eval):
+        now = time.time()
+        with self.lock:
+            self.rate_samples.append((now, timesteps))
+            self.rate_samples = [(t, n) for t, n in self.rate_samples if now - t < 120]
+            self.progress = (timesteps, steps_to_eval)
+
+    def _eta(self):
+        if len(self.rate_samples) < 2 or self.progress is None:
+            return None
+        (t0, n0), (t1, n1) = self.rate_samples[0], self.rate_samples[-1]
+        if t1 <= t0 or n1 <= n0:
+            return None
+        return self.progress[1] / ((n1 - n0) / (t1 - t0))
+
     def push_frame(self, game_frame):
         with self.lock:
             self.latest_game_frame = game_frame
@@ -91,20 +114,38 @@ class TwitchStream:
             game = self.latest_game_frame
             metrics = dict(self.metrics)
             status = self.status
+            phase = self.phase
+            progress = self.progress
+            eta = self._eta()
         canvas = Image.new('RGB', (FRAME_WIDTH, GAME_HEIGHT), (16, 16, 24))
         canvas.paste(Image.fromarray(game), (0, 0))
         draw = ImageDraw.Draw(canvas)
         x = GAME_WIDTH + 16
-        draw.text((x, 14), self.title, font=self.font, fill=(240, 240, 240))
-        y = 40
-        for line in textwrap.wrap(status, 34)[:2]:
+        draw.text((x, 12), self.title, font=self.font, fill=(240, 240, 240))
+        draw.text((x, 38), phase, font=self.small_font, fill=(255, 210, 120))
+        y = 58
+        for line in textwrap.wrap(status, 34)[:1]:
             draw.text((x, y), line, font=self.small_font, fill=(180, 180, 200))
-            y += 18
-        y = 84
+        y = 82
+        if progress is not None and not phase.startswith('evaluating'):
+            timesteps, remaining = progress
+            eval_freq = remaining if remaining else 1
+            eta_text = f'~{int(eta // 60)}m {int(eta % 60):02d}s' if eta is not None else '...'
+            draw.text((x, y), f'next eval in {remaining:,} steps  {eta_text}', font=self.small_font, fill=(180, 180, 200))
+            draw.rectangle((x, y + 18, x + 288, y + 26), outline=(90, 90, 110))
+            span = self.metrics.get('_eval_span', remaining)
+            filled = 0 if span <= 0 else int(288 * max(0.0, 1.0 - remaining / span))
+            if filled > 0:
+                draw.rectangle((x, y + 18, x + filled, y + 26), fill=(120, 180, 255))
+            y += 36
+        else:
+            y += 8
+        pulse = 0.6 + 0.4 * abs(math.sin(time.time() * 2))
+        draw.ellipse((x + 276, 40, x + 288, 52), fill=(int(255 * pulse), int(80 * pulse), int(80 * pulse)))
         for key, label in METRIC_LABELS:
             draw.text((x, y), label, font=self.small_font, fill=(150, 150, 170))
             draw.text((x, y + 16), format_value(metrics.get(key)), font=self.font, fill=(240, 240, 240))
-            y += 40
+            y += 34
         return np.asarray(canvas)
 
     def _pump(self):

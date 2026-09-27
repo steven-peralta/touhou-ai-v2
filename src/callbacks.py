@@ -11,7 +11,13 @@ class EpisodeMetricsCallback(BaseCallback):
         self.stream = stream
 
     def _on_step(self):
+        if self.stream is not None and self.n_calls % 20 == 0:
+            self.stream.set_progress(self.model.num_timesteps, self._steps_to_eval())
         return True
+
+    def _on_rollout_start(self):
+        if self.stream is not None:
+            self.stream.set_phase('collecting rollout')
 
     def _on_rollout_end(self):
         episodes = [ep for ep in self.model.ep_info_buffer if all(key in ep for key in EPISODE_METRICS)]
@@ -20,7 +26,7 @@ class EpisodeMetricsCallback(BaseCallback):
                 self.logger.record(f'rollout/ep_{key}_mean', float(np.mean([ep[key] for ep in episodes])))
         if self.stream is not None:
             self.stream.update_metrics({'time/total_timesteps': self.model.num_timesteps})
-            self.stream.set_status(f'training, next eval in {self._steps_to_eval():,} steps')
+            self.stream.set_phase('policy update')
 
     def _on_training_start(self):
         if self.stream is None:
@@ -36,10 +42,24 @@ class EpisodeMetricsCallback(BaseCallback):
 
         logger.record = record
 
+        buffer = self.model.rollout_buffer
+        original_get = buffer.get
+        n_epochs = self.model.n_epochs
+        epoch = [0]
+
+        def get(batch_size=None):
+            epoch[0] = epoch[0] % n_epochs + 1
+            stream.set_phase(f'policy update, epoch {epoch[0]}/{n_epochs}')
+            return original_get(batch_size)
+
+        buffer.get = get
+
     def _steps_to_eval(self):
         eval_callback = getattr(self, 'eval_callback', None)
         if eval_callback is None or eval_callback.eval_freq <= 0:
             return 0
+        if self.stream is not None:
+            self.stream.update_metrics({'_eval_span': eval_callback.eval_freq * self.training_env.num_envs})
         calls_left = eval_callback.eval_freq - (eval_callback.n_calls % eval_callback.eval_freq)
         return calls_left * self.training_env.num_envs
 
@@ -54,10 +74,11 @@ class MetricsEvalCallback(EvalCallback):
     def _log_success_callback(self, locals_, globals_):
         super()._log_success_callback(locals_, globals_)
         if self.stream is not None and locals_['i'] == 0:
-            frame = self.eval_env.env_method('render', indices=0)[0]
-            if frame is not None:
-                self.stream.push_frame(np.ascontiguousarray(frame[..., :3]))
-            if locals_['done']:
+            if not locals_['done']:
+                frame = self.eval_env.env_method('render', indices=0)[0]
+                if frame is not None:
+                    self.stream.push_frame(np.ascontiguousarray(frame[..., :3]))
+            else:
                 self._eval_episode += 1
                 self.stream.set_status(f'eval stage {self._eval_stage()}: episode {self._eval_episode}/{self.n_eval_episodes} done, {locals_["info"].get("hits", "?")} hits')
         if not locals_['done']:
@@ -79,5 +100,6 @@ class MetricsEvalCallback(EvalCallback):
             self._episode_metrics = {key: [] for key in EPISODE_METRICS}
             self._eval_episode = 0
             if self.stream is not None:
-                self.stream.set_status(f'evaluating on stage {self._eval_stage()} at {self.model.num_timesteps:,} steps')
+                self.stream.set_phase(f'evaluating on stage {self._eval_stage()}')
+                self.stream.set_status(f'eval at {self.model.num_timesteps:,} steps')
         return super()._on_step()
