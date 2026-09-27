@@ -1,4 +1,4 @@
-FROM ubuntu:24.04
+FROM nvidia/cuda:12.8.1-runtime-ubuntu24.04
 
 COPY . /project
 
@@ -19,5 +19,10 @@ RUN apt-get update -y &&  \
 
 ENV VIRTUAL_ENV=/project/.venv
 ENV PATH=/root/.cargo/bin:/project/.venv/bin:$PATH
+ENV GAME_RES_PATH=/workspace/game
+ENV OUTPUT_DIR=/workspace/train
+ENV RECORD_DIR=/workspace/demos
+
+VOLUME /workspace
 
 ENTRYPOINT [".venv/bin/python", "src/main.py"]

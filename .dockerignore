@@ -25,4 +25,7 @@ wandb/
 train/
 models/
 res/game/
-**/__pycache__
+**/__pycache__demos/
+demos_v1/
+best_model.zip
+.DS_Store

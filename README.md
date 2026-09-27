@@ -62,3 +62,23 @@ python src/main.py --train --pretrain-demos demos/ --pretrain-epochs 10 <usual t
 ```
 
 Before PPO starts, the policy is behavior-cloned on every `.npz` in the directory (the last 10% of each episode is held out for validation) and the value head is fit to the demos' discounted returns. The cloned model is saved to `<output>/pretrained/<run>.zip` so it can be evaluated on its own with `--load`. `--action-repeat` must match the value the demos were recorded with, and demos recorded before an observation-space change are rejected.
+
+## Docker
+
+The image is built by GitHub Actions on every push to `main` and pushed to `k9rosie/touhou-ai:latest` and `k9rosie/touhou-ai:<commit>`. It has CUDA support and expects a single volume mounted at `/workspace`:
+
+```
+/workspace/game    the game files (CM.DAT, ST.DAT, IN.DAT, MD.DAT, 102h.exe)
+/workspace/demos   recorded demonstrations (optional)
+/workspace/train   checkpoints, best models and logs (written by the container)
+```
+
+Example on a machine with an NVIDIA GPU:
+
+```
+docker run --gpus all -v /path/to/workspace:/workspace -e WANDB_API_KEY=... k9rosie/touhou-ai:latest \
+  --train --headless --device cuda --n-envs 14 --train-stages 1,2,3,4,5 --eval-stages 6 \
+  --pretrain-demos /workspace/demos --ent-coef 0.002 --learning-rate 5e-5 --total-steps 100000000
+```
+
+`--game-res-path` and `-o` default to the paths above inside the container.
