@@ -42,6 +42,10 @@ parser.add_argument('--pretrain-epochs', default=int(os.getenv('PRETRAIN_EPOCHS'
 parser.add_argument('--pretrain-batch-size', default=int(os.getenv('PRETRAIN_BATCH_SIZE', '256')), type=int, help='Behavior cloning batch size')
 parser.add_argument('--pretrain-learning-rate', default=float(os.getenv('PRETRAIN_LEARNING_RATE', '3e-4')), type=float, help='Behavior cloning learning rate')
 parser.add_argument('--record-video', default=None, type=str, help='Record one episode of the loaded model to this mp4 path')
+parser.add_argument('--entity-hidden', default=int(os.getenv('ENTITY_HIDDEN', '256')), type=int, help='Hidden width of the per-entity MLPs')
+parser.add_argument('--entity-out', default=int(os.getenv('ENTITY_OUT', '128')), type=int, help='Pooled feature size per entity type')
+parser.add_argument('--trunk-width', default=int(os.getenv('TRUNK_WIDTH', '256')), type=int, help='Width of the policy and value trunks')
+parser.add_argument('--lstm-size', default=int(os.getenv('LSTM_SIZE', '256')), type=int, help='LSTM hidden size')
 parser.add_argument('--eval-freq', default=int(os.getenv('EVAL_FREQ', '100000')), type=int, help='Eval frequency in steps')
 
 stream_key = os.getenv('STREAM_KEY')
@@ -133,6 +137,10 @@ def main():
             pretrain_batch_size=args.pretrain_batch_size,
             pretrain_learning_rate=args.pretrain_learning_rate,
             stream_key=stream_key if stream else None,
+            entity_hidden=args.entity_hidden,
+            entity_out=args.entity_out,
+            trunk_width=args.trunk_width,
+            lstm_size=args.lstm_size,
         )
     else:
         eval_model(

@@ -49,6 +49,10 @@ def train(
         pretrain_batch_size=256,
         pretrain_learning_rate=3e-4,
         stream_key=None,
+        entity_hidden=256,
+        entity_out=128,
+        trunk_width=256,
+        lstm_size=256,
 ):
     run_name = datetime.now().strftime("touhou-%Y-%m-%d_%H-%M-%S")
 
@@ -110,9 +114,11 @@ def train(
 
     policy_kwargs = dict(
         features_extractor_class=CombinedPIFEFeatureExtractor,
-        net_arch=dict(pi=[256, 256], vf=[256, 256]),
-        lstm_hidden_size=256,
+        features_extractor_kwargs=dict(pife_hidden_dim=entity_hidden, pife_out_dim=entity_out),
+        net_arch=dict(pi=[trunk_width, trunk_width], vf=[trunk_width, trunk_width]),
+        lstm_hidden_size=lstm_size,
     )
+    run.config.update(dict(entity_hidden=entity_hidden, entity_out=entity_out, trunk_width=trunk_width, lstm_size=lstm_size))
 
     if load_from_checkpoint:
         model = PPO.load(

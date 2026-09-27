@@ -26,10 +26,10 @@ class PIFE(nn.Module):
         return global_feature
 
 class MultiPIFE(nn.Module):
-    def __init__(self, input_dims, output_dim):
+    def __init__(self, input_dims, output_dim, hidden_dim=256):
         super(MultiPIFE, self).__init__()
         self.pifes = nn.ModuleList([
-            PIFE(input_dim=dim, output_dim=output_dim) for dim in input_dims
+            PIFE(input_dim=dim, output_dim=output_dim, hidden_dim=hidden_dim) for dim in input_dims
         ])
 
     def forward(self, inputs):
@@ -40,7 +40,7 @@ class MultiPIFE(nn.Module):
         return torch.cat(pife_outputs, dim=1)
 
 class PIFEFeatureExtractor(BaseFeaturesExtractor):
-    def __init__(self, obs_space, pife_out_dim=128):
+    def __init__(self, obs_space, pife_out_dim=128, pife_hidden_dim=256):
         self.input_dims = []
         self.pife_out_dim = pife_out_dim
         for space in obs_space.spaces.values():
@@ -51,7 +51,7 @@ class PIFEFeatureExtractor(BaseFeaturesExtractor):
 
         super().__init__(obs_space, features_dim=total_output_dim)
 
-        self.multi_pife = MultiPIFE(input_dims=self.input_dims, output_dim=self.pife_out_dim)
+        self.multi_pife = MultiPIFE(input_dims=self.input_dims, output_dim=self.pife_out_dim, hidden_dim=pife_hidden_dim)
 
     def forward(self, obs):
         inputs = []
@@ -63,7 +63,7 @@ class PIFEFeatureExtractor(BaseFeaturesExtractor):
         return self.multi_pife(inputs)
 
 class CombinedPIFEFeatureExtractor(BaseFeaturesExtractor):
-    def __init__(self, obs_space, pife_out_dim=128):
+    def __init__(self, obs_space, pife_out_dim=128, pife_hidden_dim=256):
         super().__init__(obs_space, features_dim=1)
 
         pife_keys = [k for k in obs_space.spaces.keys() if k.startswith("pife_")]
@@ -75,7 +75,7 @@ class CombinedPIFEFeatureExtractor(BaseFeaturesExtractor):
         pife_space = spaces.Dict({k: obs_space.spaces[k] for k in self.pife_keys})
         flat_space = spaces.Dict({k: obs_space.spaces[k] for k in self.flat_keys})
 
-        self.pife_extractor = PIFEFeatureExtractor(pife_space, pife_out_dim=pife_out_dim)
+        self.pife_extractor = PIFEFeatureExtractor(pife_space, pife_out_dim=pife_out_dim, pife_hidden_dim=pife_hidden_dim)
         self.flat_extractor = nn.Flatten()
 
         total_features_dim = self.pife_extractor.features_dim + get_flattened_obs_dim(flat_space)
