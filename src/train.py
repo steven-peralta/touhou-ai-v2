@@ -82,7 +82,7 @@ def train(
 
     # eval env — render only if a display is available
     has_display = os.environ.get('DISPLAY') is not None
-    stream = TwitchStream(stream_key, title=run_name) if stream_key else None
+    stream = TwitchStream(stream_key, title=run_name, total_steps=total_steps) if stream_key else None
     if stream is not None and not has_display:
         raise ValueError("Streaming needs a display for the eval env; pass --headless or set DISPLAY")
     eval_stages_list = eval_stages or train_stages
@@ -148,6 +148,9 @@ def train(
             ent_coef=ent_coef,
             policy_kwargs=policy_kwargs,
         )
+
+    if stream is not None:
+        stream.start_steps = model.num_timesteps
 
     if pretrain_demos:
         metrics = pretrain(

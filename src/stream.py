@@ -5,6 +5,7 @@ import threading
 import time
 
 import textwrap
+from datetime import datetime
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
@@ -30,10 +31,10 @@ METRIC_LABELS = (
 )
 
 EVAL_DELTA_LABELS = (
-    ('eval/mean_ep_frames', 'frames to 1st hit', True),
-    ('eval/mean_ep_hits', 'eval hits', False),
-    ('eval/mean_ep_cleared', 'eval clear rate', True),
-    ('eval/mean_reward', 'eval reward', True),
+    ('eval/mean_ep_frames', 'frames to hit', True),
+    ('eval/mean_ep_hits', 'hits', False),
+    ('eval/mean_ep_cleared', 'clear rate', True),
+    ('eval/mean_reward', 'reward', True),
 )
 
 
@@ -54,6 +55,18 @@ def format_value(value):
     return f'{value:.3g}'
 
 
+def format_duration(seconds):
+    seconds = int(seconds)
+    days, seconds = divmod(seconds, 86400)
+    hours, seconds = divmod(seconds, 3600)
+    minutes = seconds // 60
+    if days:
+        return f'{days}d {hours}h'
+    if hours:
+        return f'{hours}h {minutes:02d}m'
+    return f'{minutes}m'
+
+
 def format_delta(delta):
     if delta is None:
         return ''
@@ -71,12 +84,17 @@ def delta_color(delta, higher_is_better):
 
 
 class TwitchStream:
-    def __init__(self, stream_key, title='touhou-ai', bitrate='2500k'):
+    def __init__(self, stream_key, title='touhou-ai', bitrate='2500k', total_steps=None, start_steps=0):
         self.title = title
+        self.total_steps = total_steps
+        self.start_steps = start_steps
+        self.started_at = datetime.now()
         self.font = load_font(18)
         self.small_font = load_font(14)
+        self.table_font = load_font(15)
         self.metrics = {}
         self.eval_history = []
+        self.best_eval = {}
         self.status = 'starting'
         self.phase = 'starting'
         self.progress = None
@@ -108,6 +126,13 @@ class TwitchStream:
         with self.lock:
             self.eval_history.append(dict(metrics))
             self.eval_history = self.eval_history[-2:]
+            for key, _, higher_is_better in EVAL_DELTA_LABELS:
+                if key not in metrics:
+                    continue
+                current = self.best_eval.get(key)
+                value = metrics[key]
+                if current is None or (value > current if higher_is_better else value < current):
+                    self.best_eval[key] = value
 
     def set_phase(self, phase):
         with self.lock:
@@ -120,13 +145,28 @@ class TwitchStream:
             self.rate_samples = [(t, n) for t, n in self.rate_samples if now - t < 120]
             self.progress = (timesteps, steps_to_eval)
 
-    def _eta(self):
-        if len(self.rate_samples) < 2 or self.progress is None:
+    def _rate(self):
+        if len(self.rate_samples) < 2:
             return None
         (t0, n0), (t1, n1) = self.rate_samples[0], self.rate_samples[-1]
         if t1 <= t0 or n1 <= n0:
             return None
-        return self.progress[1] / ((n1 - n0) / (t1 - t0))
+        return (n1 - n0) / (t1 - t0)
+
+    def _eta(self):
+        rate = self._rate()
+        if rate is None or self.progress is None:
+            return None
+        return self.progress[1] / rate
+
+    def _completion_eta(self):
+        if self.total_steps is None or self.progress is None:
+            return None
+        elapsed = (datetime.now() - self.started_at).total_seconds()
+        done = self.progress[0] - self.start_steps
+        if elapsed <= 0 or done <= 0:
+            return None
+        return (self.total_steps - self.progress[0]) / (done / elapsed)
 
     def push_frame(self, game_frame):
         with self.lock:
@@ -141,6 +181,8 @@ class TwitchStream:
             progress = self.progress
             eta = self._eta()
             history = list(self.eval_history)
+            best = dict(self.best_eval)
+            completion = self._completion_eta()
         canvas = Image.new('RGB', (FRAME_WIDTH, GAME_HEIGHT), (16, 16, 24))
         canvas.paste(Image.fromarray(game), (0, 0))
         draw = ImageDraw.Draw(canvas)
@@ -168,20 +210,33 @@ class TwitchStream:
         draw.ellipse((x + 276, 40, x + 288, 52), fill=(int(255 * pulse), int(80 * pulse), int(80 * pulse)))
         latest = history[-1] if history else {}
         previous = history[-2] if len(history) > 1 else {}
-        draw.text((x, y), 'latest eval vs previous', font=self.small_font, fill=(200, 200, 220))
+        draw.text((x, y), 'eval (stage 6)', font=self.small_font, fill=(200, 200, 220))
+        draw.text((x + 140, y), 'latest', font=self.small_font, fill=(200, 200, 220))
+        draw.text((x + 200, y), 'delta', font=self.small_font, fill=(200, 200, 220))
+        draw.text((x + 252, y), 'best', font=self.small_font, fill=(200, 200, 220))
         y += 18
         for key, label, higher_is_better in EVAL_DELTA_LABELS:
             value = latest.get(key)
             delta = value - previous[key] if value is not None and key in previous else None
+            is_best = value is not None and best.get(key) == value
             draw.text((x, y), label, font=self.small_font, fill=(150, 150, 170))
-            draw.text((x + 160, y), format_value(value), font=self.font, fill=(240, 240, 240))
-            draw.text((x + 232, y), format_delta(delta), font=self.font, fill=delta_color(delta, higher_is_better))
-            y += 26
-        y += 8
+            draw.text((x + 140, y), format_value(value), font=self.table_font, fill=(120, 220, 140) if is_best else (240, 240, 240))
+            draw.text((x + 200, y), format_delta(delta), font=self.table_font, fill=delta_color(delta, higher_is_better))
+            draw.text((x + 252, y), format_value(best.get(key)), font=self.table_font, fill=(200, 200, 220))
+            y += 22
+        y += 6
         for key, label in METRIC_LABELS:
             draw.text((x, y), label, font=self.small_font, fill=(150, 150, 170))
-            draw.text((x + 160, y), format_value(metrics.get(key)), font=self.font, fill=(240, 240, 240))
-            y += 26
+            draw.text((x + 150, y), format_value(metrics.get(key)), font=self.font, fill=(240, 240, 240))
+            y += 24
+        y += 6
+        elapsed = datetime.now() - self.started_at
+        draw.text((x, y), f'started {self.started_at:%b %d %H:%M}, up {format_duration(elapsed.total_seconds())}', font=self.small_font, fill=(150, 150, 170))
+        y += 18
+        if self.total_steps is not None and progress is not None:
+            pct = 100.0 * progress[0] / self.total_steps
+            eta_text = f'ETA {format_duration(completion)}' if completion is not None else 'ETA ...'
+            draw.text((x, y), f'{pct:.1f}% of {self.total_steps / 1e6:.0f}M steps, {eta_text}', font=self.small_font, fill=(150, 150, 170))
         return np.asarray(canvas)
 
     def _pump(self):
