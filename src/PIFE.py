@@ -20,6 +20,11 @@ class PIFE(nn.Module):
 
     def forward(self, x):
         present = x[:, :, 0] > 0.5
+        n_used = int(present.sum(dim=1).max().item())
+        if n_used == 0:
+            return x.new_zeros((x.shape[0], self.mlp[-2].out_features))
+        x = x[:, :n_used]
+        present = present[:, :n_used]
         x_features = self.mlp(x)
         x_features = x_features.masked_fill(~present.unsqueeze(-1), 0.0)
         global_feature = torch.max(x_features, dim=1)[0]
