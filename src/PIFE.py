@@ -6,15 +6,15 @@ from stable_baselines3.common.torch_layers import BaseFeaturesExtractor, Flatten
 
 
 class PIFE(nn.Module):
-    def __init__(self, input_dim, output_dim):
+    def __init__(self, input_dim, output_dim, hidden_dim=256):
         super(PIFE, self).__init__()
 
         self.mlp = nn.Sequential(
-            nn.Linear(input_dim, 128),
+            nn.Linear(input_dim, hidden_dim),
             nn.ReLU(),
-            nn.Linear(128, 128),
+            nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
-            nn.Linear(128, output_dim),
+            nn.Linear(hidden_dim, output_dim),
             nn.ReLU()
         )
 
@@ -40,7 +40,7 @@ class MultiPIFE(nn.Module):
         return torch.cat(pife_outputs, dim=1)
 
 class PIFEFeatureExtractor(BaseFeaturesExtractor):
-    def __init__(self, obs_space, pife_out_dim=64):
+    def __init__(self, obs_space, pife_out_dim=128):
         self.input_dims = []
         self.pife_out_dim = pife_out_dim
         for space in obs_space.spaces.values():
@@ -63,7 +63,7 @@ class PIFEFeatureExtractor(BaseFeaturesExtractor):
         return self.multi_pife(inputs)
 
 class CombinedPIFEFeatureExtractor(BaseFeaturesExtractor):
-    def __init__(self, obs_space, pife_out_dim=64):
+    def __init__(self, obs_space, pife_out_dim=128):
         super().__init__(obs_space, features_dim=1)
 
         pife_keys = [k for k in obs_space.spaces.keys() if k.startswith("pife_")]

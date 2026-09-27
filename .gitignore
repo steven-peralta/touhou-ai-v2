@@ -26,4 +26,4 @@ res/**
 wandb/
 train/
 demos/
-**/__pycache__
+**/__pycache__demos_v1/

@@ -11,7 +11,7 @@ from wandb.integration.sb3 import WandbCallback
 
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecMonitor, VecTransposeImage, VecFrameStack, VecNormalize
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
-from stable_baselines3 import PPO
+from sb3_contrib import RecurrentPPO as PPO
 
 
 def linear_schedule(initial_value, min_value=0.0):
@@ -104,6 +104,8 @@ def train(
 
     policy_kwargs = dict(
         features_extractor_class=CombinedPIFEFeatureExtractor,
+        net_arch=dict(pi=[256, 256], vf=[256, 256]),
+        lstm_hidden_size=256,
     )
 
     if load_from_checkpoint:
@@ -121,7 +123,7 @@ def train(
         )
     else:
         model = PPO(
-            "MultiInputPolicy",
+            "MultiInputLstmPolicy",
             env,
             n_steps=n_steps,
             batch_size=batch_size,

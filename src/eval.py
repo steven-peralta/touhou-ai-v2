@@ -1,7 +1,7 @@
 import sys
 
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize, VecFrameStack, VecCheckNan, VecMonitor, VecTransposeImage, DummyVecEnv
-from stable_baselines3 import PPO
+from sb3_contrib import RecurrentPPO as PPO
 from touhou_gym import TouhouGym
 from stable_baselines3.common.evaluation import evaluate_policy
 

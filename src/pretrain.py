@@ -4,11 +4,13 @@ import os
 import numpy as np
 import torch as th
 import torch.nn.functional as F
+from sb3_contrib.common.recurrent.type_aliases import RNNStates
 
 HIT_REWARD_THRESHOLD = -1.5
 STEPS_BEFORE_HIT = 30
 STEPS_AFTER_HIT = 32
 MIN_EPISODES_FOR_HOLDOUT = 10
+SEQUENCE_LENGTH = 32
 
 
 class DemoDataset:
@@ -67,6 +69,12 @@ class DemoDataset:
         self.val_idx = np.concatenate(val_idx)
         self.frame_stack_size = frame_stack_size
         self.n_episodes = len(paths)
+        self.ends = np.zeros(len(self.actions), dtype=np.int64)
+        for start in np.unique(self.starts):
+            mask = self.starts == start
+            self.ends[mask] = start + mask.sum()
+        self.train_idx = self.train_idx[self.train_idx + SEQUENCE_LENGTH <= self.ends[self.train_idx]]
+        self.val_idx = self.val_idx[self.val_idx + SEQUENCE_LENGTH <= self.ends[self.val_idx]]
 
     def __len__(self):
         return len(self.actions)
@@ -80,6 +88,13 @@ class DemoDataset:
                 raise ValueError(f"Demo observation '{key}' has stacked shape {shape}, env expects {space.shape}")
         if self.actions.shape[1:] != action_space.shape or np.any(self.actions.max(axis=0) >= action_space.nvec):
             raise ValueError(f"Demo actions do not fit the env action space {action_space}")
+
+    def sequence_batch(self, window_starts, device):
+        indices = (window_starts[:, None] + np.arange(SEQUENCE_LENGTH)[None, :]).reshape(-1)
+        obs, actions, returns, imitate = self.batch(indices, device)
+        episode_starts = th.zeros(len(indices), device=device)
+        episode_starts[::SEQUENCE_LENGTH] = 1.0
+        return obs, actions, returns, imitate, episode_starts
 
     def batch(self, indices, device):
         starts = self.starts[indices]
@@ -98,20 +113,39 @@ class DemoDataset:
         return obs, actions, returns, imitate
 
 
+def zero_states(policy, n_seq, device):
+    shape = (policy.lstm_actor.num_layers, n_seq, policy.lstm_actor.hidden_size)
+    zeros = lambda: th.zeros(shape, device=device)
+    return RNNStates((zeros(), zeros()), (zeros(), zeros()))
+
+
+def evaluate_sequences(policy, obs, actions, episode_starts, device):
+    n_seq = int(episode_starts.sum().item())
+    states = zero_states(policy, n_seq, device)
+    values, log_prob, entropy = policy.evaluate_actions(obs, actions, states, episode_starts)
+    features = policy.extract_features(obs)
+    if isinstance(features, tuple):
+        features = features[0]
+    latent_pi, _ = policy._process_sequence(features, states.pi, episode_starts, policy.lstm_actor)
+    latent_pi = policy.mlp_extractor.forward_actor(latent_pi)
+    predicted = policy._get_action_dist_from_latent(latent_pi).mode()
+    return values, log_prob, entropy, predicted
+
+
 def evaluate(policy, dataset, indices, batch_size, device):
     policy.set_training_mode(False)
     nll, correct, value_error, n_imitate = 0.0, 0.0, 0.0, 0
+    n_windows = max(batch_size // SEQUENCE_LENGTH, 1)
     with th.no_grad():
-        for i in range(0, len(indices), batch_size):
-            obs, actions, returns, imitate = dataset.batch(indices[i:i + batch_size], device)
-            values, log_prob, _ = policy.evaluate_actions(obs, actions)
-            predicted = policy.get_distribution(obs).mode()
+        for i in range(0, len(indices), n_windows):
+            obs, actions, returns, imitate, episode_starts = dataset.sequence_batch(indices[i:i + n_windows], device)
+            values, log_prob, _, predicted = evaluate_sequences(policy, obs, actions, episode_starts, device)
             nll -= log_prob[imitate].sum().item()
             correct += (predicted == actions)[imitate].float().sum(dim=0).cpu().numpy()
             value_error += F.mse_loss(values.flatten(), returns, reduction='sum').item()
             n_imitate += imitate.sum().item()
     n_imitate = max(n_imitate, 1)
-    return nll / n_imitate, correct / n_imitate, value_error / max(len(indices), 1)
+    return nll / n_imitate, correct / n_imitate, value_error / max(len(indices) * SEQUENCE_LENGTH, 1)
 
 
 def pretrain(
@@ -130,8 +164,9 @@ def pretrain(
 
     dataset = DemoDataset(demo_dir, frame_stack_size, action_repeat, model.gamma)
     dataset.check_spaces(model.observation_space, model.action_space)
-    print(f"Pretraining on {dataset.n_episodes} episodes, {len(dataset.train_idx)} train / {len(dataset.val_idx)} val steps, "
-          f"{1 - dataset.imitate.mean():.1%} of steps excluded from imitation around hits")
+    print(f"Pretraining on {dataset.n_episodes} episodes, {len(dataset.train_idx)} train / {len(dataset.val_idx)} val windows "
+          f"of {SEQUENCE_LENGTH} steps, {1 - dataset.imitate.mean():.1%} of steps excluded from imitation around hits")
+    n_windows = max(batch_size // SEQUENCE_LENGTH, 1)
 
     optimizer = th.optim.Adam(policy.parameters(), lr=learning_rate)
     rng = np.random.default_rng()
@@ -140,12 +175,12 @@ def pretrain(
     for epoch in range(epochs):
         policy.set_training_mode(True)
         indices = rng.permutation(dataset.train_idx)
-        for i in range(0, len(indices), batch_size):
-            batch_idx = indices[i:i + batch_size]
+        for i in range(0, len(indices), n_windows):
+            batch_idx = indices[i:i + n_windows]
             if len(batch_idx) < 2:
                 continue
-            obs, actions, returns, imitate = dataset.batch(batch_idx, device)
-            values, log_prob, entropy = policy.evaluate_actions(obs, actions)
+            obs, actions, returns, imitate, episode_starts = dataset.sequence_batch(batch_idx, device)
+            values, log_prob, entropy = policy.evaluate_actions(obs, actions, zero_states(policy, len(batch_idx), device), episode_starts)
             weight = imitate.float()
             policy_loss = -(log_prob * weight).sum() / weight.sum().clamp(min=1.0)
             loss = policy_loss - ent_coef * entropy.mean() + vf_coef * F.mse_loss(values.flatten(), returns)
