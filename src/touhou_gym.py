@@ -162,6 +162,8 @@ class TouhouGym(gymnasium.Env):
             return None
         framebuffer = self.renderer.get_framebuffer(Interface.width, Interface.height, greyscale=False)
         img = np.frombuffer(framebuffer, dtype=np.uint8).reshape((Interface.height, Interface.width, 4))
+        if self.renderer.get_framebuffer_top_down():
+            return img
         return np.flipud(img)
 
     def _start(self):
@@ -222,6 +224,7 @@ class TouhouGym(gymnasium.Env):
 
         if not self.disable_render:
             self.renderer = backend.GameRenderer(self.resource_loader, self.window)
+            self.renderer.set_full_redraw(True)
             self.runner = GameRunner(self.window, self.renderer, self.common, self.resource_loader)
             self.window.set_runner(self.runner)
             self.runner.load_game(self.game, self.game.background, self.game.std.bgms, None, None)

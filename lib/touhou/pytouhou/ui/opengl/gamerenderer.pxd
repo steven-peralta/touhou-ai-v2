@@ -13,6 +13,7 @@ cdef class GameRenderer(Renderer):
     cdef Framebuffer framebuffer
     cdef BackgroundRenderer background_renderer
     cdef object background
+    cdef public bint full_redraw
 
     cdef bint render_game(self, Game game) except True
     cdef bint render_text(self, dict texts) except True

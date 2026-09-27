@@ -101,6 +101,14 @@ cdef class GameRenderer(Renderer):
             self.framebuffer.render(self.x, self.y, self.width, self.height)
 
 
+    def set_full_redraw(self, bint full_redraw):
+        self.full_redraw = full_redraw
+
+
+    def get_framebuffer_top_down(self):
+        return use_pack_invert
+
+
     def capture(self, filename, int width, int height):
         capture_memory = <char*>malloc(width * height * 3)
 
@@ -301,7 +309,11 @@ cdef class GameRenderer(Renderer):
         items = [item for item in interface.items if item.anmrunner and item.anmrunner.running]
         labels = interface.labels.values()
 
-        if items:
+        if self.full_redraw:
+            # The framebuffer does not persist between frames on this platform,
+            # so repaint the whole interface every frame, background first.
+            self.render_elements(interface.items)
+        elif items:
             # Redraw all the interface
             elements.extend(items)
         else:
