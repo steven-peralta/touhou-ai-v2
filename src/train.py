@@ -38,6 +38,7 @@ def train(
         game_res_path='./res/game/',
         learning_rate=3e-4,
         ent_coef=0.0,
+        gamma=None,
         reset_timesteps=False,
         eval_freq=100_000,
         train_stages=None,
@@ -76,6 +77,8 @@ def train(
 
     lr_schedule = learning_rate  # constant LR
     clip_range = linear_schedule(0.2, min_value=0.05)
+    # gamma=None keeps the loaded checkpoint's discount (SB3's 0.99 for a new model)
+    gamma_kwargs = {} if gamma is None else dict(gamma=gamma)
 
     save_freq = max(save_freq // n_envs, 1)
     eval_freq = max(eval_freq // n_envs, 1)
@@ -141,6 +144,7 @@ def train(
             learning_rate=lr_schedule,
             clip_range=clip_range,
             ent_coef=ent_coef,
+            **gamma_kwargs,
         )
     else:
         model = PPO(
@@ -156,7 +160,9 @@ def train(
             clip_range=clip_range,
             ent_coef=ent_coef,
             policy_kwargs=policy_kwargs,
+            **gamma_kwargs,
         )
+    run.config.update(dict(gamma=model.gamma, learning_rate=learning_rate, ent_coef=ent_coef))
 
     if stream is not None:
         stream.start_steps = model.num_timesteps

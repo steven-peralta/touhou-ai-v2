@@ -33,6 +33,7 @@ parser.add_argument('--n-eval-episodes', default=os.getenv('N_EVAL_EPISODES', '5
 parser.add_argument('--game-res-path', default=os.getenv('GAME_RES_PATH', './res/game/'), type=str, help='Game resource path')
 parser.add_argument('--learning-rate', default=float(os.getenv('LEARNING_RATE', '3e-4')), type=float, help='Learning rate (linearly decayed)')
 parser.add_argument('--ent-coef', default=float(os.getenv('ENT_COEF', '0.0')), type=float, help='Entropy coefficient')
+parser.add_argument('--gamma', default=float(os.getenv('GAMMA')) if os.getenv('GAMMA') else None, type=float, help='Discount factor (default: keep the loaded checkpoint\'s value, 0.99 for a new model)')
 parser.add_argument('--reset-timesteps', action='store_true', help='Reset timestep counter (restarts LR/clip schedule)')
 parser.add_argument('--record', action='store_true', help='Record human demonstrations')
 parser.add_argument('--record-dir', default=os.getenv('RECORD_DIR', 'demos/'), type=str, help='Demonstration output directory')
@@ -156,6 +157,7 @@ def main():
             game_res_path=game_res_path,
             learning_rate=learning_rate,
             ent_coef=ent_coef,
+            gamma=args.gamma,
             reset_timesteps=reset_timesteps,
             eval_freq=eval_freq,
             train_stages=train_stages,

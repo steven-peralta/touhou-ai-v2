@@ -105,7 +105,7 @@ The balance is configurable; the defaults reproduce the historical reward exactl
 | `--score-reward-cap` | `SCORE_REWARD_CAP` | none | optional per-frame cap on the score term |
 | `--mortal-envs` | `MORTAL_ENVS` | 0 | number of training envs run in mortal mode (first hit ends the episode, so `hits` is 0/1 and `frames` is the survival metric) |
 
-All four are logged to the wandb run config. Reward changes do not touch the observation space, so existing checkpoints load as-is; resume with `--load` and the new flags as a new run. Demos in `demos/` store rewards computed under the reward that was active when they were recorded, and pretraining fits the value head to their discounted returns; pass `--pretrain-skip-value` to only imitate the actions when that reward no longer matches.
+All four are logged to the wandb run config, as is the discount factor: `--gamma` (`GAMMA`) overrides PPO's gamma; when unset a loaded checkpoint keeps its saved value and a new model uses 0.99. Pretraining computes demo returns with the model's gamma, so it follows the flag. Reward changes do not touch the observation space, so existing checkpoints load as-is; resume with `--load` and the new flags as a new run. Demos in `demos/` store rewards computed under the reward that was active when they were recorded, and pretraining fits the value head to their discounted returns; pass `--pretrain-skip-value` to only imitate the actions when that reward no longer matches.
 
 ### Reward report
 
