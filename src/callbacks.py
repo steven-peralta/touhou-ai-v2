@@ -2,7 +2,12 @@ import numpy as np
 
 from stable_baselines3.common.callbacks import BaseCallback, EvalCallback
 
-EPISODE_METRICS = ('hits', 'score', 'cleared', 'frames')
+from touhou_gym import REWARD_TERMS
+
+# Per-episode values copied from the env info dict at episode end and logged as
+# rollout/ep_<key>_mean and eval/mean_ep_<key>. The reward_<term> keys are the
+# per-episode sums of each reward term, so their sum matches ep_rew_mean.
+EPISODE_METRICS = ('hits', 'score', 'cleared', 'frames', 'items') + tuple(f'reward_{term}' for term in REWARD_TERMS)
 
 
 class EpisodeMetricsCallback(BaseCallback):

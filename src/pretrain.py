@@ -158,6 +158,7 @@ def pretrain(
         learning_rate=3e-4,
         ent_coef=0.001,
         vf_coef=0.5,
+        fit_value=True,
 ):
     policy = model.policy
     device = model.device
@@ -167,6 +168,11 @@ def pretrain(
     print(f"Pretraining on {dataset.n_episodes} episodes, {len(dataset.train_idx)} train / {len(dataset.val_idx)} val windows "
           f"of {SEQUENCE_LENGTH} steps, {1 - dataset.imitate.mean():.1%} of steps excluded from imitation around hits")
     n_windows = max(batch_size // SEQUENCE_LENGTH, 1)
+    if not fit_value:
+        # Demo rewards were computed under whichever reward the recorder ran with; skip the
+        # value-head fit when that no longer matches the training reward.
+        print("Skipping the value-head fit; only imitating demo actions")
+        vf_coef = 0.0
 
     optimizer = th.optim.Adam(policy.parameters(), lr=learning_rate)
     rng = np.random.default_rng()

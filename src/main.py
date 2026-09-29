@@ -5,6 +5,7 @@ from pyvirtualdisplay import Display
 
 from eval import eval_model
 from record import record
+from reward_report import reward_report
 from video import record_video
 from train import train
 
@@ -36,12 +37,18 @@ parser.add_argument('--reset-timesteps', action='store_true', help='Reset timest
 parser.add_argument('--record', action='store_true', help='Record human demonstrations')
 parser.add_argument('--record-dir', default=os.getenv('RECORD_DIR', 'demos/'), type=str, help='Demonstration output directory')
 parser.add_argument('--record-episodes', default=int(os.getenv('RECORD_EPISODES', '1')), type=int, help='Number of episodes to record')
-parser.add_argument('--mortal', action='store_true', help='End recorded episodes on the first hit')
+parser.add_argument('--mortal', action='store_true', help='End recorded (or reward-report) episodes on the first hit')
 parser.add_argument('--pretrain-demos', default=os.getenv('PRETRAIN_DEMOS'), type=str, help='Directory of recorded demonstrations to behavior-clone before PPO training')
 parser.add_argument('--pretrain-epochs', default=int(os.getenv('PRETRAIN_EPOCHS', '10')), type=int, help='Behavior cloning epochs')
 parser.add_argument('--pretrain-batch-size', default=int(os.getenv('PRETRAIN_BATCH_SIZE', '256')), type=int, help='Behavior cloning batch size')
 parser.add_argument('--pretrain-learning-rate', default=float(os.getenv('PRETRAIN_LEARNING_RATE', '3e-4')), type=float, help='Behavior cloning learning rate')
+parser.add_argument('--pretrain-skip-value', action='store_true', help='Skip fitting the value head to demo returns (use when the demos were recorded under a different reward)')
 parser.add_argument('--record-video', default=None, type=str, help='Record one episode of the loaded model to this mp4 path')
+parser.add_argument('--reward-report', action='store_true', help='Run the loaded model and report the per-episode sum of each reward term per stage (uses --eval-stages, --n-eval-episodes, --n-eval-envs)')
+parser.add_argument('--hit-penalty', default=float(os.getenv('HIT_PENALTY', '2.0')), type=float, help='Penalty per hit in invincible (training) envs')
+parser.add_argument('--score-reward-scale', default=float(os.getenv('SCORE_REWARD_SCALE', '0.1')), type=float, help='Multiplier on the log1p score term')
+parser.add_argument('--score-reward-cap', default=float(os.getenv('SCORE_REWARD_CAP')) if os.getenv('SCORE_REWARD_CAP') else None, type=float, help='Optional per-frame cap on the score term')
+parser.add_argument('--mortal-envs', default=int(os.getenv('MORTAL_ENVS', '0')), type=int, help='Number of training envs run in mortal mode (episode ends at the first hit)')
 parser.add_argument('--entity-hidden', default=int(os.getenv('ENTITY_HIDDEN', '256')), type=int, help='Hidden width of the per-entity MLPs')
 parser.add_argument('--entity-out', default=int(os.getenv('ENTITY_OUT', '128')), type=int, help='Pooled feature size per entity type')
 parser.add_argument('--trunk-width', default=int(os.getenv('TRUNK_WIDTH', '256')), type=int, help='Width of the policy and value trunks')
@@ -85,7 +92,30 @@ def main():
         print("STREAM_KEY is required for --stream")
         exit(1)
 
-    if args.record_video:
+    reward_kwargs = dict(
+        hit_penalty=args.hit_penalty,
+        score_reward_scale=args.score_reward_scale,
+        score_reward_cap=args.score_reward_cap,
+    )
+
+    if args.reward_report:
+        if not load_model:
+            print("--load is required for --reward-report")
+            exit(1)
+        reward_report(
+            load_from_checkpoint=load_model,
+            stages=eval_stages or [stage],
+            n_episodes=n_eval_episodes,
+            n_envs=n_eval_envs,
+            output_dir=output_dir,
+            frame_stack_size=frame_stack,
+            action_repeat=args.action_repeat,
+            game_res_path=game_res_path,
+            device=device,
+            mortal=args.mortal,
+            **reward_kwargs,
+        )
+    elif args.record_video:
         if not load_model:
             print("--load is required for --record-video")
             exit(1)
@@ -136,11 +166,14 @@ def main():
             pretrain_epochs=args.pretrain_epochs,
             pretrain_batch_size=args.pretrain_batch_size,
             pretrain_learning_rate=args.pretrain_learning_rate,
+            pretrain_skip_value=args.pretrain_skip_value,
             stream_key=stream_key if stream else None,
             entity_hidden=args.entity_hidden,
             entity_out=args.entity_out,
             trunk_width=args.trunk_width,
             lstm_size=args.lstm_size,
+            mortal_envs=args.mortal_envs,
+            **reward_kwargs,
         )
     else:
         eval_model(
@@ -154,6 +187,7 @@ def main():
             n_eval_episodes=n_eval_episodes,
             game_res_path=game_res_path,
             action_repeat=args.action_repeat,
+            **reward_kwargs,
         )
 
 if __name__ == '__main__':
