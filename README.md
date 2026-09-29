@@ -92,6 +92,29 @@ docker run --gpus all -v /path/to/workspace:/workspace -e WANDB_API_KEY=... -e S
   --train --headless --stream --device cuda ...
 ```
 
+### Reward
+
+Per game frame the env rewards score gains and penalizes hits, incoming bullets, standing still and hugging the top/left/right edges (`_frame_reward` in `src/touhou_gym.py`). Each term is summed per episode and reported in the step `info` dict as `reward_score`, `reward_hits`, `reward_danger`, `reward_still` and `reward_edge` (their sum is the episode return), next to `hits`, `score`, `cleared`, `frames` and `items` (score-yielding item pickups). Training logs them to wandb as `rollout/ep_reward_<term>_mean` and the eval callback as `eval/mean_ep_reward_<term>`. The per-step breakdown is in `info['step_reward']`.
+
+The balance is configurable; the defaults reproduce the historical reward exactly:
+
+| flag | env var | default | purpose |
+|---|---|---|---|
+| `--hit-penalty` | `HIT_PENALTY` | 2.0 | penalty per hit in invincible (training) envs; mortal envs always use -5 and end the episode |
+| `--score-reward-scale` | `SCORE_REWARD_SCALE` | 0.1 | multiplier on the `log1p(score_delta / 1000)` score term |
+| `--score-reward-cap` | `SCORE_REWARD_CAP` | none | optional per-frame cap on the score term |
+| `--mortal-envs` | `MORTAL_ENVS` | 0 | number of training envs run in mortal mode (first hit ends the episode, so `hits` is 0/1 and `frames` is the survival metric) |
+
+All four are logged to the wandb run config. Reward changes do not touch the observation space, so existing checkpoints load as-is; resume with `--load` and the new flags as a new run. Demos in `demos/` store rewards computed under the reward that was active when they were recorded, and pretraining fits the value head to their discounted returns; pass `--pretrain-skip-value` to only imitate the actions when that reward no longer matches.
+
+### Reward report
+
+```
+python src/main.py --reward-report --load train/checkpoints/<run>/<ckpt>.zip --eval-stages 1,2,3,4,5,6 --n-eval-episodes 10 --n-eval-envs 10
+```
+
+Runs the loaded policy stochastically (as in training, invincible unless `--mortal` is given) for the given number of episodes on each stage and prints, per stage, the mean per-episode sum of every reward term next to hits, score, frames and item pickups. It also reports the largest score reward collected in any 1 s window (`score_burst_1s_max`) and the score reward collected within ±1 s of a hit (`score_near_hit`), which is what a hit is traded for. The table is also written as JSON (with the per-episode rows) and CSV under `<output>/reports/`. Pass `--hit-penalty` etc. to see what a candidate balance would have paid the same policy.
+
 ### Recording a video
 
 ```

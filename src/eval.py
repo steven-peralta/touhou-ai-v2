@@ -16,13 +16,14 @@ def eval_model(
         game_res_path='./res/game/',
         stages=None,
         action_repeat=2,
+        **reward_kwargs,
 ):
     if not load_from_checkpoint:
         print("Error: --load is required for evaluation")
         sys.exit(1)
 
     eval_env = SubprocVecEnv([lambda: TouhouGym(disable_render=False, stage_num=stage_num,
-                                                random_stage=random_stage, stages=stages, fps_limit=60, unlock_fps=False, game_path=game_res_path, action_repeat=action_repeat, mortal=True) for _ in
+                                                random_stage=random_stage, stages=stages, fps_limit=60, unlock_fps=False, game_path=game_res_path, action_repeat=action_repeat, mortal=True, **reward_kwargs) for _ in
                               range(n_eval_envs)], start_method='spawn')
     eval_env = VecFrameStack(eval_env, n_stack=frame_stack_size)
     eval_env = VecMonitor(eval_env)

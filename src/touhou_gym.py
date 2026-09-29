@@ -47,6 +47,17 @@ NEAR_SCALE = 48.0
 HITBOX_SCALE = 32.0
 
 SCORE_REWARD_SCALE = 0.1
+HIT_PENALTY = 2.0          # per hit in invincible (training) envs
+MORTAL_HIT_PENALTY = 5.0   # per hit in mortal envs, where the hit also ends the episode
+DANGER_PENALTY_SCALE = 0.1
+DANGER_PENALTY_CAP = 5.0
+STILL_PENALTY = 0.05
+STILL_FRAMES = 60
+EDGE_PENALTY = 0.02
+EDGE_MARGIN = 32.0
+
+# Reward terms, each summed per episode and reported in the step info dict as reward_<term>.
+REWARD_TERMS = ('score', 'hits', 'danger', 'still', 'edge')
 
 BULLET_CANCELLED = 2
 LASER_STARTING = 0
@@ -87,6 +98,9 @@ class TouhouGym(gymnasium.Env):
             disable_render=False,
             mortal=False,
             action_repeat=2,
+            hit_penalty=HIT_PENALTY,
+            score_reward_scale=SCORE_REWARD_SCALE,
+            score_reward_cap=None,
     ):
         self.gl_options = {
             'flavor': 'compatibility',
@@ -103,6 +117,9 @@ class TouhouGym(gymnasium.Env):
         self.unlock_fps = unlock_fps
 
         self.action_repeat = action_repeat
+        self.hit_penalty = hit_penalty
+        self.score_reward_scale = score_reward_scale
+        self.score_reward_cap = score_reward_cap
 
         def box(*shape):
             return spaces.Box(low=-1, high=1, shape=shape, dtype=np.float32)
@@ -127,6 +144,10 @@ class TouhouGym(gymnasium.Env):
         self.still_frames = 0
         self.episode_hits = 0
         self.episode_frames = 0
+        self.episode_items = 0
+        self.last_items = 0
+        self.episode_reward = self._zero_terms()
+        self.step_reward = self._zero_terms()
         self.last_px = 0.0
         self.last_py = 0.0
 
@@ -241,8 +262,16 @@ class TouhouGym(gymnasium.Env):
         self.still_frames = 0
         self.episode_hits = 0
         self.episode_frames = 0
+        self.episode_items = 0
+        self.last_items = self.game.players[0].rewards
+        self.episode_reward = self._zero_terms()
+        self.step_reward = self._zero_terms()
         self.last_px = self.game.players[0].x
         self.last_py = self.game.players[0].y
+
+    @staticmethod
+    def _zero_terms():
+        return {term: 0.0 for term in REWARD_TERMS}
 
     def _live_bullets(self):
         return [b for b in self.game.bullets if b.state != BULLET_CANCELLED][:MAX_BULLETS]
@@ -347,8 +376,14 @@ class TouhouGym(gymnasium.Env):
         return False, False
 
     def _frame_reward(self):
+        """Compute this frame's reward and return (reward, terminated).
+
+        Each term is also accumulated into self.step_reward (reset every agent step) and
+        self.episode_reward (reset every episode), keyed by REWARD_TERMS.
+        """
         terminated = False
         player = self.game.players[0]
+        terms = self._zero_terms()
 
         # Detect hit via lives dropping
         expected_lives = 0 if self.mortal else 9999
@@ -362,7 +397,14 @@ class TouhouGym(gymnasium.Env):
         self.last_graze = player.graze
 
         real_score_delta = score_delta - (graze_delta * 500)
-        reward = SCORE_REWARD_SCALE * math.log1p(max(real_score_delta, 0) / 1000.0)
+        score_term = self.score_reward_scale * math.log1p(max(real_score_delta, 0) / 1000.0)
+        if self.score_reward_cap is not None:
+            score_term = min(score_term, self.score_reward_cap)
+        terms['score'] = score_term
+
+        # Score-yielding item pickups (the engine counts them while the player is alive)
+        self.episode_items += player.rewards - self.last_items
+        self.last_items = player.rewards
 
         # Gradient bullet danger
         valid_hits, dists = bullet_intersects_hitbox(player.x, player.y, player.sht.hitbox, self._get_raw_bullet_array())
@@ -373,16 +415,16 @@ class TouhouGym(gymnasium.Env):
         if was_hit:
             self.episode_hits += 1
             if self.mortal:
-                reward -= 5.0
+                terms['hits'] = -MORTAL_HIT_PENALTY
                 terminated = True
             else:
-                reward -= 2.0
+                terms['hits'] = -self.hit_penalty
 
         # Danger penalty
         if np.any(valid_hits):
             threatening_dists = dists[valid_hits]
             danger_score = np.sum(1.0 / (threatening_dists + 1.0))
-            reward -= 0.1 * min(danger_score, 5.0)
+            terms['danger'] = -DANGER_PENALTY_SCALE * min(danger_score, DANGER_PENALTY_CAP)
 
         # Stillness penalty: penalize staying in the same position for >60 frames
         moved = abs(px - self.last_px) > 1.0 or abs(py - self.last_py) > 1.0
@@ -390,20 +432,28 @@ class TouhouGym(gymnasium.Env):
             self.still_frames = 0
         else:
             self.still_frames += 1
-        if self.still_frames > 60:
-            reward -= 0.05
+        if self.still_frames > STILL_FRAMES:
+            terms['still'] = -STILL_PENALTY
 
         # Edge penalty: penalize top, left, and right edges (bottom is okay)
-        edge_margin = 32.0
-        if py < edge_margin:  # too close to top
-            reward -= 0.02
-        if px < edge_margin:  # too close to left
-            reward -= 0.02
-        if px > GAME_WIDTH - edge_margin:  # too close to right
-            reward -= 0.02
+        edge = 0.0
+        if py < EDGE_MARGIN:  # too close to top
+            edge -= EDGE_PENALTY
+        if px < EDGE_MARGIN:  # too close to left
+            edge -= EDGE_PENALTY
+        if px > GAME_WIDTH - EDGE_MARGIN:  # too close to right
+            edge -= EDGE_PENALTY
+        terms['edge'] = edge
 
         self.last_px = px
         self.last_py = py
+
+        reward = 0.0
+        for term, value in terms.items():
+            value = float(value)
+            reward += value
+            self.step_reward[term] += value
+            self.episode_reward[term] += value
 
         return reward, terminated
 
@@ -416,6 +466,7 @@ class TouhouGym(gymnasium.Env):
         reward = 0.0
         terminated = False
         cleared = False
+        self.step_reward = self._zero_terms()
 
         for _ in range(self.action_repeat):
             try:
@@ -452,7 +503,13 @@ class TouhouGym(gymnasium.Env):
             'score': self.game.players[0].score,
             'cleared': int(cleared),
             'frames': self.episode_frames,
+            'items': self.episode_items,
+            # this step's reward broken down by term
+            'step_reward': dict(self.step_reward),
         }
+        # per-episode sums of each reward term (sum over terms == episode return)
+        for term in REWARD_TERMS:
+            info[f'reward_{term}'] = self.episode_reward[term]
 
         return self._get_obs(), reward, terminated, False, info
 
