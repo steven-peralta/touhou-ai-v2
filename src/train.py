@@ -4,7 +4,9 @@ from datetime import datetime
 from PIFE import PIFEFeatureExtractor, CombinedPIFEFeatureExtractor
 from touhou_gym import TouhouGym
 from pretrain import pretrain
-from callbacks import EPISODE_METRICS, EpisodeMetricsCallback, MetricsEvalCallback
+from callbacks import EPISODE_METRICS, EPISODE_TAGS, EpisodeMetricsCallback, MetricsEvalCallback
+from gym_utils import parse_lives_envs
+from lr import AdaptiveLRCallback, anchored_schedule, linear_schedule, progress_at_start, set_lr_schedule
 from stream import TwitchStream
 
 import wandb
@@ -14,11 +16,6 @@ from stable_baselines3.common.vec_env import SubprocVecEnv, VecMonitor, VecTrans
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from sb3_contrib import RecurrentPPO as PPO
 
-
-def linear_schedule(initial_value, min_value=0.0):
-    def func(progress_remaining):
-        return max(progress_remaining * initial_value, min_value)
-    return func
 
 def train(
         save_base_path,
@@ -38,6 +35,7 @@ def train(
         game_res_path='./res/game/',
         learning_rate=3e-4,
         ent_coef=0.0,
+        gamma=None,
         reset_timesteps=False,
         eval_freq=100_000,
         train_stages=None,
@@ -55,9 +53,23 @@ def train(
         trunk_width=256,
         lstm_size=256,
         hit_penalty=2.0,
+        fatal_hit_penalty=5.0,
         score_reward_scale=0.1,
         score_reward_cap=None,
-        mortal_envs=0,
+        danger_weighted_score=False,
+        lives=0,
+        lives_envs=None,
+        eval_lives=1,
+        gae_lambda=None,
+        target_kl=None,
+        lr_schedule='constant',
+        lr_adaptive=False,
+        kl_target=0.012,
+        lr_min=1e-5,
+        lr_max=1e-4,
+        lr_adapt_every=5,
+        lr_freeze_updates=20,
+        lr_reset=False,
 ):
     run_name = datetime.now().strftime("touhou-%Y-%m-%d_%H-%M-%S")
 
@@ -74,18 +86,21 @@ def train(
 
     save_freq = 100_000
 
-    lr_schedule = learning_rate  # constant LR
     clip_range = linear_schedule(0.2, min_value=0.05)
+    # None keeps the loaded checkpoint's value (SB3 defaults for a new model)
+    optional_kwargs = {key: value for key, value in dict(gamma=gamma, gae_lambda=gae_lambda).items() if value is not None}
 
     save_freq = max(save_freq // n_envs, 1)
     eval_freq = max(eval_freq // n_envs, 1)
 
-    reward_kwargs = dict(hit_penalty=hit_penalty, score_reward_scale=score_reward_scale, score_reward_cap=score_reward_cap)
+    reward_kwargs = dict(hit_penalty=hit_penalty, fatal_hit_penalty=fatal_hit_penalty, score_reward_scale=score_reward_scale,
+                         score_reward_cap=score_reward_cap, danger_weighted_score=danger_weighted_score)
 
-    # training envs; the first `mortal_envs` of them end the episode on the first hit
-    env = SubprocVecEnv([lambda i=i: TouhouGym(disable_render=not render_train, stage_num=stage_num, random_stage=random_stage, stages=train_stages, game_path=game_res_path, action_repeat=action_repeat, mortal=i < mortal_envs, **reward_kwargs) for i in range(n_envs)], start_method='spawn')
+    # training envs, each with its own lives budget (0 = invincible, 1 = mortal, N = N-th hit ends the episode)
+    env_lives = parse_lives_envs(lives_envs, n_envs, lives)
+    env = SubprocVecEnv([lambda l=l: TouhouGym(disable_render=not render_train, stage_num=stage_num, random_stage=random_stage, stages=train_stages, game_path=game_res_path, action_repeat=action_repeat, lives=l, **reward_kwargs) for l in env_lives], start_method='spawn')
     env = VecFrameStack(env, n_stack=frame_stack_size)
-    env = VecMonitor(env, info_keywords=EPISODE_METRICS)
+    env = VecMonitor(env, info_keywords=EPISODE_METRICS + EPISODE_TAGS)
 
     # eval env — render only if a display is available
     has_display = os.environ.get('DISPLAY') is not None
@@ -93,7 +108,7 @@ def train(
     if stream is not None and not has_display:
         raise ValueError("Streaming needs a display for the eval env; pass --headless or set DISPLAY")
     eval_stages_list = eval_stages or train_stages
-    eval_env = SubprocVecEnv([lambda: TouhouGym(disable_render=not has_display, stage_num=stage_num, random_stage=random_stage, stages=eval_stages_list, fps_limit=60, unlock_fps=False, game_path=game_res_path, action_repeat=action_repeat, mortal=True, **reward_kwargs) for _ in range(n_eval_envs)], start_method='spawn')
+    eval_env = SubprocVecEnv([lambda: TouhouGym(disable_render=not has_display, stage_num=stage_num, random_stage=random_stage, stages=eval_stages_list, fps_limit=60, unlock_fps=False, game_path=game_res_path, action_repeat=action_repeat, lives=eval_lives, **reward_kwargs) for _ in range(n_eval_envs)], start_method='spawn')
     eval_env = VecFrameStack(eval_env, n_stack=frame_stack_size)
     eval_env = VecMonitor(eval_env)
 
@@ -126,8 +141,10 @@ def train(
         lstm_hidden_size=lstm_size,
     )
     run.config.update(dict(entity_hidden=entity_hidden, entity_out=entity_out, trunk_width=trunk_width, lstm_size=lstm_size))
-    run.config.update(dict(hit_penalty=hit_penalty, score_reward_scale=score_reward_scale, score_reward_cap=score_reward_cap,
-                           mortal_envs=mortal_envs, n_envs=n_envs, train_stages=train_stages, eval_stages=eval_stages_list))
+    run.config.update(dict(hit_penalty=hit_penalty, fatal_hit_penalty=fatal_hit_penalty, score_reward_scale=score_reward_scale,
+                           score_reward_cap=score_reward_cap, danger_weighted_score=danger_weighted_score,
+                           lives=lives, lives_envs=env_lives, eval_lives=eval_lives,
+                           n_envs=n_envs, train_stages=train_stages, eval_stages=eval_stages_list))
 
     if load_from_checkpoint:
         model = PPO.load(
@@ -138,9 +155,11 @@ def train(
             n_steps=n_steps,
             batch_size=batch_size,
             n_epochs=n_epochs,
-            learning_rate=lr_schedule,
+            learning_rate=learning_rate,
             clip_range=clip_range,
             ent_coef=ent_coef,
+            target_kl=target_kl,
+            **optional_kwargs,
         )
     else:
         model = PPO(
@@ -152,11 +171,20 @@ def train(
             verbose=2,
             tensorboard_log=logs_path,
             n_epochs=n_epochs,
-            learning_rate=lr_schedule,
+            learning_rate=learning_rate,
             clip_range=clip_range,
             ent_coef=ent_coef,
+            target_kl=target_kl,
             policy_kwargs=policy_kwargs,
+            **optional_kwargs,
         )
+
+    # LR schedule anchored to the step this run starts at, so a linear decay starts at the flag value
+    p0 = progress_at_start(model, total_steps, reset_timesteps)
+    set_lr_schedule(model, anchored_schedule(learning_rate, p0, decay=lr_schedule))
+    run.config.update(dict(gamma=model.gamma, gae_lambda=model.gae_lambda, learning_rate=learning_rate, lr_schedule=lr_schedule,
+                           lr_adaptive=lr_adaptive, kl_target=kl_target, lr_min=lr_min, lr_max=lr_max, lr_adapt_every=lr_adapt_every,
+                           lr_freeze_updates=lr_freeze_updates, target_kl=target_kl, ent_coef=ent_coef, total_steps=total_steps))
 
     if stream is not None:
         stream.start_steps = model.num_timesteps
@@ -179,13 +207,17 @@ def train(
 
     metrics_callback = EpisodeMetricsCallback(stream=stream)
     metrics_callback.eval_callback = eval_callback
+    callbacks = [checkpoint_callback, eval_callback, wandb_callback, metrics_callback]
+    if lr_adaptive:
+        callbacks.append(AdaptiveLRCallback(learning_rate, p0, lr_schedule, kl_target=kl_target, lr_min=lr_min, lr_max=lr_max,
+                                            adapt_every=lr_adapt_every, freeze_updates=lr_freeze_updates, reset=lr_reset))
 
     try:
         model.learn(
             total_timesteps=total_steps,
             reset_num_timesteps=reset_timesteps,
             progress_bar=True,
-            callback=[checkpoint_callback, eval_callback, wandb_callback, metrics_callback],
+            callback=callbacks,
             tb_log_name=run_name
         )
     except Exception as e:

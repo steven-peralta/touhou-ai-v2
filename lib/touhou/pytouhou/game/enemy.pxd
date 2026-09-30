@@ -27,6 +27,7 @@ cdef class Enemy(Element):
 
     cpdef play_sound(self, index)
     cpdef set_hitbox(self, double width, double height)
+    cpdef get_hitbox(self)
     cpdef set_bullet_attributes(self, type_, anim, sprite_idx_offset,
                                 unsigned long bullets_per_shot,
                                 unsigned long number_of_shots, double speed,

@@ -37,18 +37,20 @@ MAX_LASERS = 128
 MAX_ENEMIES = 64
 MAX_ITEMS = 20
 
-BULLET_FEATURES = 9
-LASER_FEATURES = 10
-ENEMY_FEATURES = 3
-ITEM_FEATURES = 4
+PLAYER_FEATURES = 5   # hitbox extents (4) + remaining lives fraction
+BULLET_FEATURES = 10  # present, rel xy, near xy, velocity, hitbox, launching flag
+LASER_FEATURES = 11   # present, rel xy, near xy, direction, half width, started, starting, start progress
+ENEMY_FEATURES = 5    # present, rel xy, hitbox half sizes
+ITEM_FEATURES = 4     # present, rel xy, type
 
 VELOCITY_SCALE = 8.0
 NEAR_SCALE = 48.0
 HITBOX_SCALE = 32.0
 
 SCORE_REWARD_SCALE = 0.1
-HIT_PENALTY = 2.0          # per hit in invincible (training) envs
-MORTAL_HIT_PENALTY = 5.0   # per hit in mortal envs, where the hit also ends the episode
+HIT_PENALTY = 2.0          # per hit that leaves lives to spare (invincible envs: every hit)
+FATAL_HIT_PENALTY = 5.0    # for the hit that ends the episode in envs with finite lives
+INVINCIBLE_LIVES = 9999
 DANGER_PENALTY_SCALE = 0.1
 DANGER_PENALTY_CAP = 5.0
 STILL_PENALTY = 0.05
@@ -59,6 +61,7 @@ EDGE_MARGIN = 32.0
 # Reward terms, each summed per episode and reported in the step info dict as reward_<term>.
 REWARD_TERMS = ('score', 'hits', 'danger', 'still', 'edge')
 
+BULLET_LAUNCHING = 0
 BULLET_CANCELLED = 2
 LASER_STARTING = 0
 LASER_STARTED = 1
@@ -96,12 +99,19 @@ class TouhouGym(gymnasium.Env):
             fps_limit=-1,
             unlock_fps=True,
             disable_render=False,
-            mortal=False,
+            lives=0,
             action_repeat=2,
             hit_penalty=HIT_PENALTY,
+            fatal_hit_penalty=FATAL_HIT_PENALTY,
             score_reward_scale=SCORE_REWARD_SCALE,
             score_reward_cap=None,
+            danger_weighted_score=False,
     ):
+        """
+        lives: hits the episode survives before it ends. 0 = invincible (the episode never ends on a
+        hit), 1 = mortal (the first hit ends it), N = the N-th hit ends it. Each hit that leaves
+        lives to spare costs hit_penalty; the hit that ends the episode costs fatal_hit_penalty.
+        """
         self.gl_options = {
             'flavor': 'compatibility',
             'version': 2.1,
@@ -110,7 +120,7 @@ class TouhouGym(gymnasium.Env):
             'backend': 'opengl'
         }
         self.disable_render = disable_render
-        self.mortal = mortal
+        self.lives = int(lives)
         self.render_mode = 'rgb_array'
         self.resource_path = abspath(game_path)
         self.fps_limit = fps_limit
@@ -118,14 +128,17 @@ class TouhouGym(gymnasium.Env):
 
         self.action_repeat = action_repeat
         self.hit_penalty = hit_penalty
+        self.fatal_hit_penalty = fatal_hit_penalty
         self.score_reward_scale = score_reward_scale
         self.score_reward_cap = score_reward_cap
+        self.danger_weighted_score = danger_weighted_score
+        self.expected_lives = self._initial_lives()
 
         def box(*shape):
             return spaces.Box(low=-1, high=1, shape=shape, dtype=np.float32)
 
         self.observation_space = spaces.Dict({
-            'game_player': box(4),
+            'game_player': box(PLAYER_FEATURES),
             'game_stage': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),
             'game_boss': box(3),
             'game_closest_bullet': box(BULLET_FEATURES),
@@ -250,8 +263,9 @@ class TouhouGym(gymnasium.Env):
             self.window.set_runner(self.runner)
             self.runner.load_game(self.game, self.game.background, self.game.std.bgms, None, None)
 
-        # Mortal mode: 0 lives (die on first hit). Invincible mode: many lives.
-        self.game.players[0].lives = 0 if self.mortal else 9999
+        # The engine ends the game when lives drops below 0, so a budget of N hits is N - 1 engine lives.
+        self.expected_lives = self._initial_lives()
+        self.game.players[0].lives = self.expected_lives
 
         # Fast-forward past the empty pre-spawn phase
         while len(self.game.enemies) == 0 and len(self.game.bullets) == 0:
@@ -273,6 +287,15 @@ class TouhouGym(gymnasium.Env):
     def _zero_terms():
         return {term: 0.0 for term in REWARD_TERMS}
 
+    def _initial_lives(self):
+        return INVINCIBLE_LIVES if self.lives <= 0 else self.lives - 1
+
+    def _lives_fraction(self):
+        """Remaining hits the episode survives, as a fraction of the budget (1.0 when invincible)."""
+        if self.lives <= 0:
+            return 1.0
+        return max(self.expected_lives + 1, 0) / self.lives
+
     def _live_bullets(self):
         return [b for b in self.game.bullets if b.state != BULLET_CANCELLED][:MAX_BULLETS]
 
@@ -282,7 +305,8 @@ class TouhouGym(gymnasium.Env):
         h = player.sht.hitbox
         player_np = np.array(
             [(px + h) / GAME_WIDTH, (px - h) / GAME_WIDTH,
-             (py + h) / GAME_HEIGHT, (py - h) / GAME_HEIGHT],
+             (py + h) / GAME_HEIGHT, (py - h) / GAME_HEIGHT,
+             self._lives_fraction()],
             dtype=np.float32)
 
         def rel(x, y):
@@ -294,7 +318,7 @@ class TouhouGym(gymnasium.Env):
         def bullet_row(b):
             hw, hh = b.get_hitbox()
             return (1.0, *rel(b.x, b.y), *near(b.x, b.y), b.dx / VELOCITY_SCALE, b.dy / VELOCITY_SCALE,
-                    hw / HITBOX_SCALE, hh / HITBOX_SCALE)
+                    hw / HITBOX_SCALE, hh / HITBOX_SCALE, float(b.state == BULLET_LAUNCHING))
 
         def laser_row(laser):
             x0, y0, x1, y1, half_width, state = laser.get_segment()
@@ -302,13 +326,21 @@ class TouhouGym(gymnasium.Env):
             length_sq = sx * sx + sy * sy
             t = 0.0 if length_sq == 0 else min(1.0, max(0.0, ((px - x0) * sx + (py - y0) * sy) / length_sq))
             nx, ny = x0 + t * sx, y0 + t * sy
+            if state == LASER_STARTING and laser.start_duration > 0:
+                start_progress = min(laser.frame / laser.start_duration, 1.0)
+            else:
+                start_progress = 1.0
             return (1.0, *rel(nx, ny), *near(nx, ny), math.cos(laser.angle), math.sin(laser.angle),
-                    half_width / HITBOX_SCALE, float(state == LASER_STARTED), float(state == LASER_STARTING))
+                    half_width / HITBOX_SCALE, float(state == LASER_STARTED), float(state == LASER_STARTING),
+                    start_progress)
 
         bullets_np = entity_array(self._live_bullets(), MAX_BULLETS, BULLET_FEATURES, bullet_row)
         lasers_np = entity_array(self.game.lasers, MAX_LASERS, LASER_FEATURES, laser_row)
-        enemies_np = entity_array(self.game.enemies, MAX_ENEMIES, ENEMY_FEATURES,
-                                  lambda e: (1.0, *rel(e.x, e.y)))
+        def enemy_row(e):
+            hw, hh = e.get_hitbox()
+            return (1.0, *rel(e.x, e.y), hw / HITBOX_SCALE, hh / HITBOX_SCALE)
+
+        enemies_np = entity_array(self.game.enemies, MAX_ENEMIES, ENEMY_FEATURES, enemy_row)
         items_np = entity_array(self.game.items, MAX_ITEMS, ITEM_FEATURES,
                                 lambda i: (1.0, *rel(i.x, i.y), i._type / 6.0))
 
@@ -385,10 +417,13 @@ class TouhouGym(gymnasium.Env):
         player = self.game.players[0]
         terms = self._zero_terms()
 
-        # Detect hit via lives dropping
-        expected_lives = 0 if self.mortal else 9999
-        was_hit = player.lives < expected_lives
-        player.lives = expected_lives
+        # Detect hit via lives dropping; extends and 1ups never add to the budget
+        was_hit = player.lives < self.expected_lives
+        fatal = was_hit and player.lives < 0
+        if self.lives <= 0:
+            player.lives = self.expected_lives
+        else:
+            self.expected_lives = player.lives = min(player.lives, self.expected_lives)
 
         # Normalized score delta as base reward, with graze contribution removed
         score_delta = player.score - self.current_score
@@ -396,35 +431,37 @@ class TouhouGym(gymnasium.Env):
         self.current_score = player.score
         self.last_graze = player.graze
 
+        # Gradient bullet danger
+        valid_hits, dists = bullet_intersects_hitbox(player.x, player.y, player.sht.hitbox, self._get_raw_bullet_array())
+        danger_score = 0.0
+        if np.any(valid_hits):
+            threatening_dists = dists[valid_hits]
+            danger_score = float(np.sum(1.0 / (threatening_dists + 1.0)))
+            terms['danger'] = -DANGER_PENALTY_SCALE * min(danger_score, DANGER_PENALTY_CAP)
+
         real_score_delta = score_delta - (graze_delta * 500)
         score_term = self.score_reward_scale * math.log1p(max(real_score_delta, 0) / 1000.0)
         if self.score_reward_cap is not None:
             score_term = min(score_term, self.score_reward_cap)
+        if self.danger_weighted_score:
+            # pay less for pickups made under fire
+            score_term *= 1.0 - min(danger_score, 1.0)
         terms['score'] = score_term
 
         # Score-yielding item pickups (the engine counts them while the player is alive)
         self.episode_items += player.rewards - self.last_items
         self.last_items = player.rewards
 
-        # Gradient bullet danger
-        valid_hits, dists = bullet_intersects_hitbox(player.x, player.y, player.sht.hitbox, self._get_raw_bullet_array())
-
         px, py = player.x, player.y
 
-        # Hit handling: mortal mode terminates, invincible mode penalizes
+        # Hit handling: the hit that uses up the last life ends the episode
         if was_hit:
             self.episode_hits += 1
-            if self.mortal:
-                terms['hits'] = -MORTAL_HIT_PENALTY
+            if fatal:
+                terms['hits'] = -self.fatal_hit_penalty
                 terminated = True
             else:
                 terms['hits'] = -self.hit_penalty
-
-        # Danger penalty
-        if np.any(valid_hits):
-            threatening_dists = dists[valid_hits]
-            danger_score = np.sum(1.0 / (threatening_dists + 1.0))
-            terms['danger'] = -DANGER_PENALTY_SCALE * min(danger_score, DANGER_PENALTY_CAP)
 
         # Stillness penalty: penalize staying in the same position for >60 frames
         moved = abs(px - self.last_px) > 1.0 or abs(py - self.last_py) > 1.0
@@ -504,6 +541,10 @@ class TouhouGym(gymnasium.Env):
             'cleared': int(cleared),
             'frames': self.episode_frames,
             'items': self.episode_items,
+            'score_per_life': self.game.players[0].score / (self.episode_hits + 1),
+            # episode tags for per-stage / per-env-type aggregation
+            'stage': self.stage_num,
+            'lives': self.lives,
             # this step's reward broken down by term
             'step_reward': dict(self.step_reward),
         }

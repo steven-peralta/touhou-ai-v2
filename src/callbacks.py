@@ -7,7 +7,47 @@ from touhou_gym import REWARD_TERMS
 # Per-episode values copied from the env info dict at episode end and logged as
 # rollout/ep_<key>_mean and eval/mean_ep_<key>. The reward_<term> keys are the
 # per-episode sums of each reward term, so their sum matches ep_rew_mean.
-EPISODE_METRICS = ('hits', 'score', 'cleared', 'frames', 'items') + tuple(f'reward_{term}' for term in REWARD_TERMS)
+EPISODE_METRICS = ('hits', 'score', 'cleared', 'frames', 'items', 'score_per_life') + tuple(f'reward_{term}' for term in REWARD_TERMS)
+# Episode tags used to group the metrics (also copied from info by VecMonitor, never averaged).
+EPISODE_TAGS = ('stage', 'lives')
+# Metrics also logged per stage (rollout/ep_<key>_mean_stage<n>) and per env type (rollout/ep_<key>_mean_<type>).
+GROUP_METRICS = ('hits', 'score', 'cleared', 'frames', 'items', 'score_per_life', 'reward_score', 'reward_hits')
+
+
+def env_type_name(lives):
+    lives = int(lives)
+    return 'invincible' if lives <= 0 else 'mortal' if lives == 1 else f'lives{lives}'
+
+
+def log_episode_metrics(logger, episodes, prefix='rollout/ep_', suffix='_mean'):
+    """Log the mean of every episode metric, then the same per stage, per env type and per outcome."""
+    if not episodes:
+        return
+
+    def mean(key, subset):
+        return float(np.mean([ep[key] for ep in subset]))
+
+    for key in EPISODE_METRICS:
+        logger.record(f'{prefix}{key}{suffix}', mean(key, episodes))
+    hit_reward = -mean('reward_hits', episodes)
+    logger.record(f'{prefix}reward_score_to_hits', mean('reward_score', episodes) / max(hit_reward, 1e-6))
+
+    groups = {}
+    for ep in episodes:
+        if 'stage' in ep:
+            groups.setdefault(f'stage{int(ep["stage"])}', []).append(ep)
+        if 'lives' in ep:
+            groups.setdefault(env_type_name(ep['lives']), []).append(ep)
+    for name, subset in sorted(groups.items()):
+        for key in GROUP_METRICS:
+            logger.record(f'{prefix}{key}{suffix}_{name}', mean(key, subset))
+
+    # Episodes that can end on a hit: score when they did vs when they cleared the stage
+    finite = [ep for ep in episodes if int(ep.get('lives', 0)) > 0]
+    for name, subset in (('cleared', [ep for ep in finite if ep['cleared']]), ('died', [ep for ep in finite if not ep['cleared']])):
+        if subset:
+            logger.record(f'{prefix}score{suffix}_{name}', mean('score', subset))
+            logger.record(f'{prefix}frames{suffix}_{name}', mean('frames', subset))
 
 
 class EpisodeMetricsCallback(BaseCallback):
@@ -26,9 +66,7 @@ class EpisodeMetricsCallback(BaseCallback):
 
     def _on_rollout_end(self):
         episodes = [ep for ep in self.model.ep_info_buffer if all(key in ep for key in EPISODE_METRICS)]
-        if episodes:
-            for key in EPISODE_METRICS:
-                self.logger.record(f'rollout/ep_{key}_mean', float(np.mean([ep[key] for ep in episodes])))
+        log_episode_metrics(self.logger, episodes)
         if self.stream is not None:
             self.stream.update_metrics({'time/total_timesteps': self.model.num_timesteps})
             self.stream.set_phase('policy update')

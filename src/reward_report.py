@@ -18,7 +18,7 @@ from sb3_contrib import RecurrentPPO
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecFrameStack, VecMonitor
 
-from callbacks import EPISODE_METRICS
+from callbacks import EPISODE_METRICS, EPISODE_TAGS
 from touhou_gym import TouhouGym, REWARD_TERMS
 
 FRAMES_PER_SECOND = 60
@@ -110,7 +110,7 @@ def format_table(rows):
     return '\n'.join(lines)
 
 
-def make_env_fn(stage, mortal, game_res_path, action_repeat, hit_penalty, score_reward_scale, score_reward_cap):
+def make_env_fn(stage, lives, game_res_path, action_repeat, reward_kwargs):
     def make():
         return TouhouGym(
             disable_render=True,
@@ -119,22 +119,20 @@ def make_env_fn(stage, mortal, game_res_path, action_repeat, hit_penalty, score_
             unlock_fps=True,
             game_path=game_res_path,
             action_repeat=action_repeat,
-            mortal=mortal,
-            hit_penalty=hit_penalty,
-            score_reward_scale=score_reward_scale,
-            score_reward_cap=score_reward_cap,
+            lives=lives,
+            **reward_kwargs,
         )
     return make
 
 
-def run_stage(model, stage, n_episodes, n_envs, frame_stack_size, action_repeat, mortal, game_res_path,
-              hit_penalty, score_reward_scale, score_reward_cap, env_fn_factory=make_env_fn, vec_env_cls=SubprocVecEnv):
+def run_stage(model, stage, n_episodes, n_envs, frame_stack_size, action_repeat, lives, game_res_path,
+              reward_kwargs, env_fn_factory=make_env_fn, vec_env_cls=SubprocVecEnv):
     n_envs = max(1, min(n_envs, n_episodes))
-    env_fn = env_fn_factory(stage, mortal, game_res_path, action_repeat, hit_penalty, score_reward_scale, score_reward_cap)
+    env_fn = env_fn_factory(stage, lives, game_res_path, action_repeat, reward_kwargs)
     kwargs = {'start_method': 'spawn'} if vec_env_cls is SubprocVecEnv else {}
     env = vec_env_cls([env_fn for _ in range(n_envs)], **kwargs)
     env = VecFrameStack(env, n_stack=frame_stack_size)
-    env = VecMonitor(env, info_keywords=EPISODE_METRICS)
+    env = VecMonitor(env, info_keywords=EPISODE_METRICS + EPISODE_TAGS)
     collector = EpisodeCollector(n_envs, window_steps=FRAMES_PER_SECOND // max(action_repeat, 1))
     try:
         evaluate_policy(model, env, n_eval_episodes=n_episodes, deterministic=False, callback=collector)
@@ -167,13 +165,11 @@ def reward_report(
         action_repeat=2,
         game_res_path='./res/game/',
         device='cuda',
-        mortal=False,
-        hit_penalty=2.0,
-        score_reward_scale=0.1,
-        score_reward_cap=None,
+        lives=0,
         model=None,
         env_fn_factory=make_env_fn,
         vec_env_cls=SubprocVecEnv,
+        **reward_kwargs,
 ):
     if model is None:
         model = RecurrentPPO.load(load_from_checkpoint, device=device)
@@ -182,24 +178,22 @@ def reward_report(
         checkpoint=load_from_checkpoint,
         stages=list(stages),
         episodes_per_stage=n_episodes,
-        mortal=mortal,
+        lives=lives,
         action_repeat=action_repeat,
         frame_stack=frame_stack_size,
-        hit_penalty=hit_penalty,
-        score_reward_scale=score_reward_scale,
-        score_reward_cap=score_reward_cap,
         deterministic=False,
+        **reward_kwargs,
     )
     print(f"Reward report for {load_from_checkpoint}: {n_episodes} stochastic episodes per stage on stages {list(stages)}, "
-          f"{'mortal' if mortal else 'invincible'} mode, hit_penalty={hit_penalty}, score_reward_scale={score_reward_scale}, "
-          f"score_reward_cap={score_reward_cap}")
+          f"lives={lives} ({'invincible' if lives <= 0 else 'mortal' if lives == 1 else 'finite'}), "
+          + ', '.join(f'{k}={v}' for k, v in reward_kwargs.items()))
 
     rows, per_episode = [], {}
     started = time.time()
     for stage in stages:
         stage_started = time.time()
-        episodes = run_stage(model, stage, n_episodes, n_envs, frame_stack_size, action_repeat, mortal, game_res_path,
-                             hit_penalty, score_reward_scale, score_reward_cap, env_fn_factory, vec_env_cls)
+        episodes = run_stage(model, stage, n_episodes, n_envs, frame_stack_size, action_repeat, lives, game_res_path,
+                             reward_kwargs, env_fn_factory, vec_env_cls)
         row = {'stage': stage, **summarize(episodes)}
         rows.append(row)
         per_episode[str(stage)] = episodes

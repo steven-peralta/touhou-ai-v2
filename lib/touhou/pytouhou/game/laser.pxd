@@ -13,10 +13,10 @@ cdef class LaserLaunchAnim(Element):
 
 
 cdef class Laser(Element):
-    cdef public unsigned long frame
+    cdef public unsigned long frame, start_duration, duration
     cdef public double angle
 
-    cdef unsigned long start_duration, duration, stop_duration, grazing_delay,
+    cdef unsigned long stop_duration, grazing_delay,
     cdef unsigned long grazing_extra_duration, sprite_idx_offset
     cdef double base_pos[2]
     cdef double speed, start_offset, end_offset, max_length, width
