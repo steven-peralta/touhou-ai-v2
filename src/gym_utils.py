@@ -3,6 +3,20 @@ import numpy as np
 GAME_WIDTH = 384
 GAME_HEIGHT = 448
 
+def parse_lives_envs(spec, n_envs, default_lives=0):
+    """'4:1,10:3' -> [1, 1, 1, 1, 3, ...]; envs not covered by the spec get default_lives."""
+    lives = []
+    for part in (spec or '').split(','):
+        part = part.strip()
+        if not part:
+            continue
+        count, value = part.split(':')
+        lives += [int(value)] * int(count)
+    if len(lives) > n_envs:
+        raise ValueError(f"--lives-envs '{spec}' assigns {len(lives)} envs but there are only {n_envs}")
+    return lives + [int(default_lives)] * (n_envs - len(lives))
+
+
 def entity_array(entities, max_entities, n_features, row_fn):
     arr = np.zeros((max_entities, n_features), dtype=np.float32)
     rows = [row_fn(e) for e in entities[:max_entities] if e]

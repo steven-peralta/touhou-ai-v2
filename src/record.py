@@ -23,7 +23,7 @@ def record(
         stage_num,
         random_stage,
         stages=None,
-        mortal=False,
+        lives=0,
         action_repeat=2,
         min_steps=60,
         game_res_path='./res/game/',
@@ -40,7 +40,7 @@ def record(
         fps_limit=60,
         unlock_fps=False,
         game_path=game_res_path,
-        mortal=mortal,
+        lives=lives,
         action_repeat=action_repeat,
     )
 

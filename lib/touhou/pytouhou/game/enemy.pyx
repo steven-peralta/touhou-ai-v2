@@ -132,6 +132,10 @@ cdef class Enemy(Element):
         self.hitbox_half_size[:] = [width / 2, height / 2]
 
 
+    cpdef get_hitbox(self):
+        return self.hitbox_half_size[0], self.hitbox_half_size[1]
+
+
     cpdef set_bullet_attributes(self, type_, anim, sprite_idx_offset,
                                 unsigned long bullets_per_shot,
                                 unsigned long number_of_shots, double speed,

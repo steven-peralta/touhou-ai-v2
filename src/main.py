@@ -34,11 +34,24 @@ parser.add_argument('--game-res-path', default=os.getenv('GAME_RES_PATH', './res
 parser.add_argument('--learning-rate', default=float(os.getenv('LEARNING_RATE', '3e-4')), type=float, help='Learning rate (linearly decayed)')
 parser.add_argument('--ent-coef', default=float(os.getenv('ENT_COEF', '0.0')), type=float, help='Entropy coefficient')
 parser.add_argument('--gamma', default=float(os.getenv('GAMMA')) if os.getenv('GAMMA') else None, type=float, help='Discount factor (default: keep the loaded checkpoint\'s value, 0.99 for a new model)')
+parser.add_argument('--gae-lambda', default=float(os.getenv('GAE_LAMBDA')) if os.getenv('GAE_LAMBDA') else None, type=float, help='GAE lambda (default: keep the loaded checkpoint\'s value, 0.95 for a new model)')
+parser.add_argument('--target-kl', default=float(os.getenv('TARGET_KL')) if os.getenv('TARGET_KL') else None, type=float, help='PPO early-stops the epoch loop when approx_kl exceeds 1.5x this value')
+parser.add_argument('--lr-schedule', default=os.getenv('LR_SCHEDULE', 'constant'), choices=['constant', 'linear'], help='LR shape: constant, or linear decay to 0 over the remaining steps, anchored to the loaded step count')
+parser.add_argument('--lr-adaptive', action='store_true', default=os.getenv('LR_ADAPTIVE', '0').lower() in ('1', 'true', 'yes'), help='KL-adaptive LR: scale the LR by 1.5 when train/approx_kl leaves the [target/1.5, target*1.5] band')
+parser.add_argument('--kl-target', default=float(os.getenv('KL_TARGET', '0.012')), type=float, help='approx_kl target of the adaptive LR controller')
+parser.add_argument('--lr-min', default=float(os.getenv('LR_MIN', '1e-5')), type=float, help='Lower clamp of the adaptive LR')
+parser.add_argument('--lr-max', default=float(os.getenv('LR_MAX', '1e-4')), type=float, help='Upper clamp of the adaptive LR')
+parser.add_argument('--lr-adapt-every', default=int(os.getenv('LR_ADAPT_EVERY', '5')), type=int, help='Minimum PPO updates between adaptive LR changes')
+parser.add_argument('--lr-freeze-updates', default=int(os.getenv('LR_FREEZE_UPDATES', '20')), type=int, help='PPO updates after a (re)start during which the adaptive LR holds')
+parser.add_argument('--lr-reset', action='store_true', default=os.getenv('LR_RESET', '0').lower() in ('1', 'true', 'yes'), help='Start the adaptive LR from --learning-rate instead of the level saved in the checkpoint')
 parser.add_argument('--reset-timesteps', action='store_true', help='Reset timestep counter (restarts LR/clip schedule)')
 parser.add_argument('--record', action='store_true', help='Record human demonstrations')
 parser.add_argument('--record-dir', default=os.getenv('RECORD_DIR', 'demos/'), type=str, help='Demonstration output directory')
 parser.add_argument('--record-episodes', default=int(os.getenv('RECORD_EPISODES', '1')), type=int, help='Number of episodes to record')
-parser.add_argument('--mortal', action='store_true', help='End recorded (or reward-report) episodes on the first hit')
+parser.add_argument('--mortal', action='store_true', help='Alias for --lives 1 when recording or running the reward report')
+parser.add_argument('--lives', default=int(os.getenv('LIVES', '0')), type=int, help='Hits an episode survives before it ends: 0 = invincible, 1 = mortal, N = the N-th hit ends it (training envs not covered by --lives-envs, recording, reward report)')
+parser.add_argument('--lives-envs', default=os.getenv('LIVES_ENVS'), type=str, help='Per-env lives for training, e.g. "4:1,10:3" = 4 mortal envs then 10 envs with 3 lives; the rest use --lives')
+parser.add_argument('--eval-lives', default=int(os.getenv('EVAL_LIVES', '1')), type=int, help='Lives of the eval env (1 = mortal, as before)')
 parser.add_argument('--pretrain-demos', default=os.getenv('PRETRAIN_DEMOS'), type=str, help='Directory of recorded demonstrations to behavior-clone before PPO training')
 parser.add_argument('--pretrain-epochs', default=int(os.getenv('PRETRAIN_EPOCHS', '10')), type=int, help='Behavior cloning epochs')
 parser.add_argument('--pretrain-batch-size', default=int(os.getenv('PRETRAIN_BATCH_SIZE', '256')), type=int, help='Behavior cloning batch size')
@@ -49,7 +62,9 @@ parser.add_argument('--reward-report', action='store_true', help='Run the loaded
 parser.add_argument('--hit-penalty', default=float(os.getenv('HIT_PENALTY', '2.0')), type=float, help='Penalty per hit in invincible (training) envs')
 parser.add_argument('--score-reward-scale', default=float(os.getenv('SCORE_REWARD_SCALE', '0.1')), type=float, help='Multiplier on the log1p score term')
 parser.add_argument('--score-reward-cap', default=float(os.getenv('SCORE_REWARD_CAP')) if os.getenv('SCORE_REWARD_CAP') else None, type=float, help='Optional per-frame cap on the score term')
-parser.add_argument('--mortal-envs', default=int(os.getenv('MORTAL_ENVS', '0')), type=int, help='Number of training envs run in mortal mode (episode ends at the first hit)')
+parser.add_argument('--fatal-hit-penalty', default=float(os.getenv('FATAL_HIT_PENALTY', '5.0')), type=float, help='Penalty for the hit that ends an episode (envs with lives)')
+parser.add_argument('--danger-weighted-score', action='store_true', default=os.getenv('DANGER_WEIGHTED_SCORE', '0').lower() in ('1', 'true', 'yes'), help='Scale the score term by (1 - min(danger, 1)) so pickups under fire pay less')
+parser.add_argument('--mortal-envs', default=int(os.getenv('MORTAL_ENVS', '0')), type=int, help='Shorthand for --lives-envs "N:1": the first N training envs are mortal')
 parser.add_argument('--entity-hidden', default=int(os.getenv('ENTITY_HIDDEN', '256')), type=int, help='Hidden width of the per-entity MLPs')
 parser.add_argument('--entity-out', default=int(os.getenv('ENTITY_OUT', '128')), type=int, help='Pooled feature size per entity type')
 parser.add_argument('--trunk-width', default=int(os.getenv('TRUNK_WIDTH', '256')), type=int, help='Width of the policy and value trunks')
@@ -95,9 +110,15 @@ def main():
 
     reward_kwargs = dict(
         hit_penalty=args.hit_penalty,
+        fatal_hit_penalty=args.fatal_hit_penalty,
         score_reward_scale=args.score_reward_scale,
         score_reward_cap=args.score_reward_cap,
+        danger_weighted_score=args.danger_weighted_score,
     )
+    lives = 1 if args.mortal else args.lives
+    lives_envs = args.lives_envs
+    if args.mortal_envs and not lives_envs:
+        lives_envs = f'{args.mortal_envs}:1'
 
     if args.reward_report:
         if not load_model:
@@ -113,7 +134,7 @@ def main():
             action_repeat=args.action_repeat,
             game_res_path=game_res_path,
             device=device,
-            mortal=args.mortal,
+            lives=lives,
             **reward_kwargs,
         )
     elif args.record_video:
@@ -135,7 +156,7 @@ def main():
             stage_num=stage,
             random_stage=random_stage,
             stages=train_stages,
-            mortal=args.mortal,
+            lives=lives,
             action_repeat=args.action_repeat,
             game_res_path=game_res_path,
         )
@@ -158,6 +179,16 @@ def main():
             learning_rate=learning_rate,
             ent_coef=ent_coef,
             gamma=args.gamma,
+            gae_lambda=args.gae_lambda,
+            target_kl=args.target_kl,
+            lr_schedule=args.lr_schedule,
+            lr_adaptive=args.lr_adaptive,
+            kl_target=args.kl_target,
+            lr_min=args.lr_min,
+            lr_max=args.lr_max,
+            lr_adapt_every=args.lr_adapt_every,
+            lr_freeze_updates=args.lr_freeze_updates,
+            lr_reset=args.lr_reset,
             reset_timesteps=reset_timesteps,
             eval_freq=eval_freq,
             train_stages=train_stages,
@@ -174,7 +205,9 @@ def main():
             entity_out=args.entity_out,
             trunk_width=args.trunk_width,
             lstm_size=args.lstm_size,
-            mortal_envs=args.mortal_envs,
+            lives=args.lives,
+            lives_envs=lives_envs,
+            eval_lives=args.eval_lives,
             **reward_kwargs,
         )
     else:
@@ -189,6 +222,7 @@ def main():
             n_eval_episodes=n_eval_episodes,
             game_res_path=game_res_path,
             action_repeat=args.action_repeat,
+            lives=args.eval_lives,
             **reward_kwargs,
         )
 
